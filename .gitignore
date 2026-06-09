@@ -1,0 +1,14 @@
+/build
+app/build
+/.artifacts
+/app/.artifacts
+*.apk
+*.hprof
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/captures
+.externalNativeBuild
+.cxx
