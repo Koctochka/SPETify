@@ -1181,6 +1181,45 @@ fun SettingsScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                 )
             )
         }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+
+        // Vocal Remover Button
+        val isProcessingVocal by viewModel.isProcessingVocal.collectAsState()
+        val processingStatus by viewModel.processingStatus.collectAsState()
+        val currentTrack by viewModel.currentTrack.collectAsState()
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Button(
+                onClick = { viewModel.removeVocalFromCurrentTrack() },
+                enabled = !isProcessingVocal && currentTrack != null,
+                modifier = Modifier.fillMaxWidth(),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.MicExternalOff, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(if (currentLang == "ru") "Удалить вокал (AI Demucs)" else "Remove Vocal (AI Demucs)")
+            }
+
+            if (isProcessingVocal) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        text = processingStatus,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            }
+        }
     }
 
     if (showLanguageDialog) {

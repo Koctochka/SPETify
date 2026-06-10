@@ -5,8 +5,15 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.*
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import retrofit2.Retrofit
+import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
 
 data class DirectoryContent(
@@ -29,7 +36,12 @@ private data class CachedMetadata(
 
 class MusicRepository(private val context: Context) {
     private val playlistDao = AppDatabase.getDatabase(context).playlistDao()
-    
+
+    private val vocalApi = Retrofit.Builder()
+        .baseUrl("http://192.168.1.5:8000") // TODO: User should update this
+        .build()
+        .create(VocalRemoverApi::class.java)
+
     companion object {
         private val metadataCache = ConcurrentHashMap<String, CachedMetadata>()
     }
@@ -352,7 +364,7 @@ class MusicRepository(private val context: Context) {
         }
     }
 
-    private fun fetchFromMediaStore(): List<AudioTrack> {
+    private    fun fetchFromMediaStore(): List<AudioTrack> {
         val audioList = mutableListOf<AudioTrack>()
         val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(
@@ -401,5 +413,49 @@ class MusicRepository(private val context: Context) {
             }
         }
         return audioList
+    }
+
+    suspend fun processVocalRemoval(track: AudioTrack, onProgress: (String) -> Unit): File? = withContext(Dispatchers.IO) {
+        return@withContext try {
+            onProgress("Подготовка файла...")
+            val tempFile = copyUriToTempFile(track.contentUri) ?: return@withContext null
+
+            onProgress("Отправка на сервер (Demucs)...")
+            val requestFile = tempFile.asRequestBody("audio/*".toMediaTypeOrNull())
+            val body = MultipartBody.Part.createFormData("file", tempFile.name, requestFile)
+
+            val response = vocalApi.separateVocals(body)
+
+            if (response.isSuccessful) {
+                onProgress("Загрузка результата...")
+                val resultFile = File(context.cacheDir, "instrumental_${track.id}.wav")
+                response.body()?.byteStream()?.use { input ->
+                    FileOutputStream(resultFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                onProgress("Готово!")
+                resultFile
+            } else {
+                Log.e("MusicRepository", "Vocal removal failed: ${response.errorBody()?.string()}")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("MusicRepository", "Error during vocal removal: ${e.message}")
+            null
+        }
+    }
+
+    private fun copyUriToTempFile(uri: Uri): File? {
+        return try {
+            val tempFile = File(context.cacheDir, "temp_process.mp3")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+            }
+            tempFile
+        } catch (e: Exception) {
+            Log.e("MusicRepository", "Error copying URI to temp file: ${e.message}")
+            null
+        }
     }
 }

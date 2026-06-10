@@ -305,6 +305,12 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     private val _sleepTimerTotalSeconds = MutableStateFlow<Long?>(null)
     val sleepTimerTotalSeconds = _sleepTimerTotalSeconds.asStateFlow()
 
+    private val _isProcessingVocal = MutableStateFlow(false)
+    val isProcessingVocal = _isProcessingVocal.asStateFlow()
+
+    private val _processingStatus = MutableStateFlow("")
+    val processingStatus = _processingStatus.asStateFlow()
+
     private var sleepTimerJob: kotlinx.coroutines.Job? = null
 
     private val _currentQueueName = MutableStateFlow("Current Queue")
@@ -347,6 +353,22 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     fun setAutoScrollQueue(enabled: Boolean) {
         _autoScrollQueue.value = enabled
         sharedPrefs.edit().putBoolean("auto_scroll_queue", enabled).apply()
+    }
+
+    fun removeVocalFromCurrentTrack() {
+        val track = currentTrack.value ?: return
+        viewModelScope.launch {
+            _isProcessingVocal.value = true
+            val resultFile = repository.processVocalRemoval(track) { status ->
+                _processingStatus.value = status
+            }
+
+            if (resultFile != null && resultFile.exists()) {
+                val instrumentalUri = Uri.fromFile(resultFile)
+                playTrack(track.copy(contentUri = instrumentalUri))
+            }
+            _isProcessingVocal.value = false
+        }
     }
 
     fun setSleepTimer(totalSeconds: Long?) {
