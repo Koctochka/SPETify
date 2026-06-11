@@ -1109,6 +1109,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
     val isDualPlayback by viewModel.isDualPlayback.collectAsState()
     val instrumentalVolume by viewModel.instrumentalVolume.collectAsState()
     val vocalsVolume by viewModel.vocalsVolume.collectAsState()
+    val hasCachedResult by viewModel.hasCachedResult.collectAsState()
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -1299,11 +1300,9 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                val hasPrevious = viewModel.hasPreviousResult()
-                
                 Button(
                     onClick = { viewModel.loadPreviousResult() },
-                    enabled = hasPrevious && !isDualPlayback,
+                    enabled = hasCachedResult && !isDualPlayback,
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant,

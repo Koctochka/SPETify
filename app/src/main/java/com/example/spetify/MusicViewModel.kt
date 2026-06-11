@@ -323,6 +323,14 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     private val _vocalRemoverTargetTrack = MutableStateFlow<AudioTrack?>(null)
     val vocalRemoverTargetTrack = _vocalRemoverTargetTrack.asStateFlow()
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val hasCachedResult = _vocalRemoverTargetTrack.mapLatest { track ->
+        if (track == null) return@mapLatest false
+        val instFile = java.io.File(context.cacheDir, "instrumental_${track.id}.mp3")
+        val vocFile = java.io.File(context.cacheDir, "vocals_${track.id}.mp3")
+        instFile.exists() && vocFile.exists() && instFile.length() > 0 && vocFile.length() > 0
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     private val _isDualPlayback = MutableStateFlow(false)
     val isDualPlayback = _isDualPlayback.asStateFlow()
 
@@ -457,16 +465,9 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         _showVocalRemoverScreen.value = show
     }
 
-    fun hasPreviousResult(): Boolean {
-        val track = _vocalRemoverTargetTrack.value ?: return false
-        val instFile = java.io.File(context.cacheDir, "instrumental_${track.id}.mp3")
-        val vocFile = java.io.File(context.cacheDir, "vocals_${track.id}.mp3")
-        return instFile.exists() && vocFile.exists() && instFile.length() > 0 && vocFile.length() > 0
-    }
-
     fun loadPreviousResult() {
         val track = _vocalRemoverTargetTrack.value ?: return
-        if (hasPreviousResult()) {
+        if (hasCachedResult.value) {
             setupDualPlayback(track)
         }
     }
@@ -502,7 +503,6 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         stopDualPlayback()
         mediaController?.pause()
         _isDualPlayback.value = true
-        _currentTrack.value = track
         
         val instFile = java.io.File(context.cacheDir, "instrumental_${track.id}.mp3")
         val vocFile = java.io.File(context.cacheDir, "vocals_${track.id}.mp3")
@@ -512,6 +512,15 @@ class MusicViewModel(private val context: Context) : ViewModel() {
             volume = _instrumentalVolume.value
             prepare()
             play()
+            
+            // Sync duration to the target track so UI slider works
+            addListener(object : androidx.media3.common.Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == androidx.media3.common.Player.STATE_READY) {
+                        _vocalRemoverTargetTrack.value = _vocalRemoverTargetTrack.value?.copy(duration = duration)
+                    }
+                }
+            })
         }
 
         vocalPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
