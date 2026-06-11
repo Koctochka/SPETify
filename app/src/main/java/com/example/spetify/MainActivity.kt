@@ -1109,7 +1109,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
     val isDualPlayback by viewModel.isDualPlayback.collectAsState()
     val instrumentalVolume by viewModel.instrumentalVolume.collectAsState()
     val vocalsVolume by viewModel.vocalsVolume.collectAsState()
-    val hasCachedResult by viewModel.hasCachedResult.collectAsState()
+    val hasSavedResult by viewModel.hasSavedResult.collectAsState()
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -1302,7 +1302,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
             ) {
                 Button(
                     onClick = { viewModel.loadPreviousResult() },
-                    enabled = hasCachedResult && !isDualPlayback,
+                    enabled = hasSavedResult && !isDualPlayback,
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -1312,7 +1312,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                 ) {
                     Icon(Icons.Default.History, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (currentLang == "ru") "Загрузить кэш" else "Load Cached")
+                    Text(if (currentLang == "ru") "Загрузить сохран." else "Load Saved")
                 }
 
                 Button(

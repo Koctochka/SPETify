@@ -324,13 +324,18 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     val vocalRemoverTargetTrack = _vocalRemoverTargetTrack.asStateFlow()
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val hasCachedResult = _vocalRemoverTargetTrack.mapLatest { track ->
+    val hasSavedResult = _vocalRemoverTargetTrack.mapLatest { track ->
         if (track == null) return@mapLatest false
-        val instFile = java.io.File(context.cacheDir, "instrumental_${track.id}.mp3")
-        val vocFile = java.io.File(context.cacheDir, "vocals_${track.id}.mp3")
         
-        val exists = instFile.exists() && vocFile.exists() && instFile.length() > 0 && vocFile.length() > 0
-        android.util.Log.d("VocalRemover", "Checking cache for ID ${track.id}: $exists (Path: ${instFile.absolutePath})")
+        val musicDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC)
+        val spetifyDir = java.io.File(musicDir, "SPETify")
+        val safeTitle = track.title.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        
+        val targetInst = java.io.File(spetifyDir, "instrumentals/$safeTitle [Instrumental].mp3")
+        val targetVoc = java.io.File(spetifyDir, "vocals/$safeTitle [Vocals].mp3")
+        
+        val exists = targetInst.exists() && targetVoc.exists()
+        android.util.Log.d("VocalRemover", "Checking saved files for ${track.title}: $exists")
         exists
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
@@ -478,9 +483,47 @@ class MusicViewModel(private val context: Context) : ViewModel() {
 
     fun loadPreviousResult() {
         val track = _vocalRemoverTargetTrack.value ?: return
-        if (hasCachedResult.value) {
-            setupDualPlayback(track)
+        if (hasSavedResult.value) {
+            val musicDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC)
+            val spetifyDir = java.io.File(musicDir, "SPETify")
+            val safeTitle = track.title.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            
+            val targetInst = java.io.File(spetifyDir, "instrumentals/$safeTitle [Instrumental].mp3")
+            val targetVoc = java.io.File(spetifyDir, "vocals/$safeTitle [Vocals].mp3")
+
+            setupDualPlaybackFromFiles(track, targetInst, targetVoc)
         }
+    }
+
+    private fun setupDualPlaybackFromFiles(track: AudioTrack, instFile: java.io.File, vocFile: java.io.File) {
+        stopDualPlayback()
+        mediaController?.pause()
+        _isDualPlayback.value = true
+        
+        instrumentalPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            setMediaItem(androidx.media3.common.MediaItem.fromUri(Uri.fromFile(instFile)))
+            volume = _instrumentalVolume.value
+            prepare()
+            play()
+            
+            addListener(object : androidx.media3.common.Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == androidx.media3.common.Player.STATE_READY) {
+                        _vocalRemoverTargetTrack.value = _vocalRemoverTargetTrack.value?.copy(duration = duration)
+                    }
+                }
+            })
+        }
+
+        vocalPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            setMediaItem(androidx.media3.common.MediaItem.fromUri(Uri.fromFile(vocFile)))
+            volume = _vocalsVolume.value
+            prepare()
+            play()
+        }
+        
+        _isPlaying.value = true
+        startProgressPolling()
     }
 
     fun toggleDualPlayPause() {
@@ -511,38 +554,9 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     private fun setupDualPlayback(track: AudioTrack) {
-        stopDualPlayback()
-        mediaController?.pause()
-        _isDualPlayback.value = true
-        
         val instFile = java.io.File(context.cacheDir, "instrumental_${track.id}.mp3")
         val vocFile = java.io.File(context.cacheDir, "vocals_${track.id}.mp3")
-
-        instrumentalPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
-            setMediaItem(androidx.media3.common.MediaItem.fromUri(Uri.fromFile(instFile)))
-            volume = _instrumentalVolume.value
-            prepare()
-            play()
-            
-            // Sync duration to the target track so UI slider works
-            addListener(object : androidx.media3.common.Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (playbackState == androidx.media3.common.Player.STATE_READY) {
-                        _vocalRemoverTargetTrack.value = _vocalRemoverTargetTrack.value?.copy(duration = duration)
-                    }
-                }
-            })
-        }
-
-        vocalPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
-            setMediaItem(androidx.media3.common.MediaItem.fromUri(Uri.fromFile(vocFile)))
-            volume = _vocalsVolume.value
-            prepare()
-            play()
-        }
-        
-        _isPlaying.value = true
-        startProgressPolling()
+        setupDualPlaybackFromFiles(track, instFile, vocFile)
     }
 
     private fun stopDualPlayback() {
