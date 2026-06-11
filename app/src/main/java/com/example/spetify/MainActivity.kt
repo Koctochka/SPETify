@@ -1103,12 +1103,18 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
     val currentLang by viewModel.appLanguage.collectAsState()
     val isProcessingVocal by viewModel.isProcessingVocal.collectAsState()
     val processingStatus by viewModel.processingStatus.collectAsState()
-    val currentTrack by viewModel.currentTrack.collectAsState()
+    val targetTrack by viewModel.vocalRemoverTargetTrack.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val currentPosition by viewModel.currentPosition.collectAsState()
     val isDualPlayback by viewModel.isDualPlayback.collectAsState()
     val instrumentalVolume by viewModel.instrumentalVolume.collectAsState()
     val vocalsVolume by viewModel.vocalsVolume.collectAsState()
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { viewModel.setVocalRemoverTarget(it) }
+    }
 
     Column(
         modifier = Modifier
@@ -1121,11 +1127,12 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .statusBarsPadding()
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = {
+                onBack()
+            }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
             }
             Text(
@@ -1144,25 +1151,41 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            if (currentTrack != null) {
-                Text(
-                    text = "${currentTrack!!.title} - ${currentTrack!!.artist}",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    textAlign = TextAlign.Center
-                )
-            } else {
-                Text(
-                    text = if (currentLang == "ru") "Выберите трек для обработки" else "Select a track to process",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
+            // File Selection Area
+            OutlinedCard(
+                onClick = { if (!isProcessingVocal) filePickerLauncher.launch("audio/*") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AudioFile,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = targetTrack?.title ?: (if (currentLang == "ru") "Нажмите, чтобы выбрать файл" else "Tap to select audio file"),
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = TextAlign.Center
+                    )
+                    if (targetTrack != null) {
+                        Text(
+                            text = if (currentLang == "ru") "Файл выбран" else "File selected",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
 
             Button(
                 onClick = { viewModel.removeVocalFromCurrentTrack() },
-                enabled = !isProcessingVocal && currentTrack != null,
+                enabled = !isProcessingVocal && targetTrack != null,
                 modifier = Modifier.fillMaxWidth(),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
             ) {
@@ -1194,7 +1217,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                     Slider(
                         value = currentPosition.toFloat(),
                         onValueChange = { viewModel.seekDualPlayback(it.toLong()) },
-                        valueRange = 0f..(currentTrack?.duration?.toFloat() ?: 1f),
+                        valueRange = 0f..(targetTrack?.duration?.toFloat() ?: 1f).coerceAtLeast(1f),
                         colors = SliderDefaults.colors(
                             thumbColor = MaterialTheme.colorScheme.primary,
                             activeTrackColor = MaterialTheme.colorScheme.primary
@@ -1206,7 +1229,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(formatDuration(currentPosition), style = MaterialTheme.typography.bodySmall)
-                        Text(formatDuration(currentTrack?.duration ?: 0L), style = MaterialTheme.typography.bodySmall)
+                        Text(formatDuration(targetTrack?.duration ?: 0L), style = MaterialTheme.typography.bodySmall)
                     }
 
                     IconButton(

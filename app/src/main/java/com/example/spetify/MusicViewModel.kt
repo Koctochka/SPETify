@@ -320,6 +320,9 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     private val _showVocalRemoverScreen = MutableStateFlow(false)
     val showVocalRemoverScreen = _showVocalRemoverScreen.asStateFlow()
 
+    private val _vocalRemoverTargetTrack = MutableStateFlow<AudioTrack?>(null)
+    val vocalRemoverTargetTrack = _vocalRemoverTargetTrack.asStateFlow()
+
     private val _isDualPlayback = MutableStateFlow(false)
     val isDualPlayback = _isDualPlayback.asStateFlow()
 
@@ -371,7 +374,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun removeVocalFromCurrentTrack() {
-        val track = currentTrack.value ?: return
+        val track = _vocalRemoverTargetTrack.value ?: return
         
         // Pause current playback before starting
         mediaController?.pause()
@@ -392,6 +395,46 @@ class MusicViewModel(private val context: Context) : ViewModel() {
             }
             _isProcessingVocal.value = false
         }
+    }
+
+    fun setVocalRemoverTarget(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Create a temporary AudioTrack for processing
+            val fileName = getFileName(uri) ?: "Selected Track"
+            val id = uri.toString().hashCode().toLong()
+            val track = AudioTrack(
+                id = id,
+                title = fileName.substringBeforeLast('.'),
+                artist = "Unknown",
+                duration = 0, // Will be updated during playback/scan if possible
+                contentUri = uri,
+                fileName = fileName
+            )
+            _vocalRemoverTargetTrack.value = track
+            
+            // Auto stop current dual playback if target changes
+            withContext(Dispatchers.Main) {
+                stopDualPlayback()
+            }
+        }
+    }
+
+    private fun getFileName(uri: Uri): String? {
+        var result: String? = null
+        if (uri.scheme == "content") {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (index != -1) result = cursor.getString(index)
+                }
+            }
+        }
+        if (result == null) {
+            result = uri.path
+            val cut = result?.lastIndexOf('/') ?: -1
+            if (cut != -1) result = result?.substring(cut + 1)
+        }
+        return result
     }
 
     fun setInstrumentalVolume(volume: Float) {
@@ -415,14 +458,14 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun hasPreviousResult(): Boolean {
-        val track = currentTrack.value ?: return false
+        val track = _vocalRemoverTargetTrack.value ?: return false
         val instFile = java.io.File(context.cacheDir, "instrumental_${track.id}.mp3")
         val vocFile = java.io.File(context.cacheDir, "vocals_${track.id}.mp3")
-        return instFile.exists() && vocFile.exists()
+        return instFile.exists() && vocFile.exists() && instFile.length() > 0 && vocFile.length() > 0
     }
 
     fun loadPreviousResult() {
-        val track = currentTrack.value ?: return
+        val track = _vocalRemoverTargetTrack.value ?: return
         if (hasPreviousResult()) {
             setupDualPlayback(track)
         }
