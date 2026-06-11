@@ -311,6 +311,17 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     private val _processingStatus = MutableStateFlow("")
     val processingStatus = _processingStatus.asStateFlow()
 
+    private val _instrumentalVolume = MutableStateFlow(1.0f)
+    val instrumentalVolume = _instrumentalVolume.asStateFlow()
+
+    private val _vocalsVolume = MutableStateFlow(1.0f)
+    val vocalsVolume = _vocalsVolume.asStateFlow()
+
+    private val _showVocalRemoverScreen = MutableStateFlow(false)
+    val showVocalRemoverScreen = _showVocalRemoverScreen.asStateFlow()
+
+    private var vocalPlayer: androidx.media3.exoplayer.ExoPlayer? = null
+
     private var sleepTimerJob: kotlinx.coroutines.Job? = null
 
     private val _currentQueueName = MutableStateFlow("Current Queue")
@@ -359,16 +370,40 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         val track = currentTrack.value ?: return
         viewModelScope.launch {
             _isProcessingVocal.value = true
-            val resultFile = repository.processVocalRemoval(track) { status ->
+            val result = repository.processVocalRemoval(track) { status ->
                 _processingStatus.value = status
             }
 
-            if (resultFile != null && resultFile.exists()) {
-                val instrumentalUri = Uri.fromFile(resultFile)
-                playTrack(track.copy(contentUri = instrumentalUri))
+            if (result != null) {
+                val (instrumentalFile, vocalsFile) = result
+                val instrumentalUri = Uri.fromFile(instrumentalFile)
+                
+                val instrumentalTrack = track.copy(
+                    id = track.id + 777777,
+                    title = "[AI] " + track.title,
+                    contentUri = instrumentalUri
+                )
+                playTrack(instrumentalTrack)
             }
             _isProcessingVocal.value = false
         }
+    }
+
+    fun setInstrumentalVolume(volume: Float) {
+        _instrumentalVolume.value = volume
+        mediaController?.volume = volume
+    }
+
+    fun setVocalsVolume(volume: Float) {
+        _vocalsVolume.value = volume
+    }
+
+    fun toggleVocalRemoverScreen(show: Boolean) {
+        _showVocalRemoverScreen.value = show
+    }
+
+    fun saveProcessedFiles() {
+        // Placeholder for saving files to internal/external storage
     }
 
     fun setSleepTimer(totalSeconds: Long?) {

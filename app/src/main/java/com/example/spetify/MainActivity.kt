@@ -444,6 +444,11 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
         if (showHelp) {
             HelpInfoScreen(viewModel = viewModel, onBack = { viewModel.toggleHelp(false) })
         }
+
+        val showVocalRemover by viewModel.showVocalRemoverScreen.collectAsState()
+        if (showVocalRemover) {
+            VocalRemoverScreen(viewModel = viewModel, onBack = { viewModel.toggleVocalRemoverScreen(false) })
+        }
         
         if (showSleepTimerDialog) {
             SleepTimerDialog(
@@ -1094,6 +1099,152 @@ fun QueueViewContent(
 }
 
 @Composable
+fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
+    val currentLang by viewModel.appLanguage.collectAsState()
+    val isProcessingVocal by viewModel.isProcessingVocal.collectAsState()
+    val processingStatus by viewModel.processingStatus.collectAsState()
+    val currentTrack by viewModel.currentTrack.collectAsState()
+    val instrumentalVolume by viewModel.instrumentalVolume.collectAsState()
+    val vocalsVolume by viewModel.vocalsVolume.collectAsState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // Header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
+            }
+            Text(
+                text = if (currentLang == "ru") "Удаление вокала" else "Vocal Remover",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            if (currentTrack != null) {
+                Text(
+                    text = "${currentTrack!!.title} - ${currentTrack!!.artist}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    textAlign = TextAlign.Center
+                )
+            } else {
+                Text(
+                    text = if (currentLang == "ru") "Выберите трек для обработки" else "Select a track to process",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            Button(
+                onClick = { viewModel.removeVocalFromCurrentTrack() },
+                enabled = !isProcessingVocal && currentTrack != null,
+                modifier = Modifier.fillMaxWidth(),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.AutoFixHigh, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(if (currentLang == "ru") "Запустить обработку (AI)" else "Start AI Processing")
+            }
+
+            if (isProcessingVocal) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        text = processingStatus,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+
+            // Volume Controls
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (currentLang == "ru") "Инструментал" else "Instrumental",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                    Slider(
+                        value = instrumentalVolume,
+                        onValueChange = { viewModel.setInstrumentalVolume(it) },
+                        valueRange = 0f..1f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                }
+
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.RecordVoiceOver, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (currentLang == "ru") "Вокал" else "Vocals",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                    Slider(
+                        value = vocalsVolume,
+                        onValueChange = { viewModel.setVocalsVolume(it) },
+                        valueRange = 0f..1f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            Button(
+                onClick = { viewModel.saveProcessedFiles() },
+                enabled = currentTrack?.title?.contains("[AI]") == true,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Save, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(if (currentLang == "ru") "Сохранить файлы" else "Save Files")
+            }
+        }
+    }
+}
+
+@Composable
 fun SettingsScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
     val currentLang by viewModel.appLanguage.collectAsState()
     val currentTheme by viewModel.appTheme.collectAsState()
@@ -1118,7 +1269,7 @@ fun SettingsScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
             }
             Text(
-                text = if (currentLang == "ru") "Настройки" else "Settings",
+                text = if (currentLang == "ru") "Меню" else "Menu",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -1145,10 +1296,13 @@ fun SettingsScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
             onClick = { showThemeDialog = true }
         )
         SettingsItem(
-            icon = Icons.AutoMirrored.Filled.VolumeUp, 
-            title = if (currentLang == "ru") "Аудио" else "Audio",
+            icon = Icons.Default.MicExternalOff, 
+            title = if (currentLang == "ru") "Удаление вокала" else "Vocal Remover",
             subtitle = null,
-            onClick = { /* Audio settings placeholder */ }
+            onClick = { 
+                viewModel.toggleVocalRemoverScreen(true)
+                onBack()
+            }
         )
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
@@ -1185,41 +1339,7 @@ fun SettingsScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
 
         // Vocal Remover Button
-        val isProcessingVocal by viewModel.isProcessingVocal.collectAsState()
-        val processingStatus by viewModel.processingStatus.collectAsState()
-        val currentTrack by viewModel.currentTrack.collectAsState()
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            Button(
-                onClick = { viewModel.removeVocalFromCurrentTrack() },
-                enabled = !isProcessingVocal && currentTrack != null,
-                modifier = Modifier.fillMaxWidth(),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.MicExternalOff, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(if (currentLang == "ru") "Удалить вокал (AI Demucs)" else "Remove Vocal (AI Demucs)")
-            }
-
-            if (isProcessingVocal) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    Text(
-                        text = processingStatus,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-            }
-        }
+        // Moved to dedicated screen
     }
 
     if (showLanguageDialog) {

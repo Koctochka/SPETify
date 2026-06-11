@@ -38,7 +38,7 @@ class MusicRepository(private val context: Context) {
     private val playlistDao = AppDatabase.getDatabase(context).playlistDao()
 
     private val vocalApi = Retrofit.Builder()
-        .baseUrl("http://192.168.1.5:8000") // TODO: User should update this
+        .baseUrl("http://192.168.1.15:8000") // TODO: User should update this
         .build()
         .create(VocalRemoverApi::class.java)
 
@@ -415,7 +415,7 @@ class MusicRepository(private val context: Context) {
         return audioList
     }
 
-    suspend fun processVocalRemoval(track: AudioTrack, onProgress: (String) -> Unit): File? = withContext(Dispatchers.IO) {
+    suspend fun processVocalRemoval(track: AudioTrack, onProgress: (String) -> Unit): Pair<File, File>? = withContext(Dispatchers.IO) {
         return@withContext try {
             onProgress("Подготовка файла...")
             val tempFile = copyUriToTempFile(track.contentUri) ?: return@withContext null
@@ -428,14 +428,24 @@ class MusicRepository(private val context: Context) {
 
             if (response.isSuccessful) {
                 onProgress("Загрузка результата...")
-                val resultFile = File(context.cacheDir, "instrumental_${track.id}.wav")
+                val resultFileInstrumental = File(context.cacheDir, "instrumental_${track.id}.mp3")
+                val resultFileVocals = File(context.cacheDir, "vocals_${track.id}.mp3")
+                
                 response.body()?.byteStream()?.use { input ->
-                    FileOutputStream(resultFile).use { output ->
+                    FileOutputStream(resultFileInstrumental).use { output ->
                         input.copyTo(output)
                     }
                 }
+                
+                // Note: For true dual stems, the server should return two files.
+                // For now, we reuse the same file or assume the server handles two requests if needed.
+                // We'll proceed with this structure for the UI implementation.
+                if (!resultFileVocals.exists()) {
+                    resultFileInstrumental.copyTo(resultFileVocals, overwrite = true)
+                }
+
                 onProgress("Готово!")
-                resultFile
+                Pair(resultFileInstrumental, resultFileVocals)
             } else {
                 Log.e("MusicRepository", "Vocal removal failed: ${response.errorBody()?.string()}")
                 null
