@@ -370,6 +370,12 @@ class MusicViewModel(private val context: Context) : ViewModel() {
 
     fun removeVocalFromCurrentTrack() {
         val track = currentTrack.value ?: return
+        
+        // Pause current playback before starting
+        mediaController?.pause()
+        _isPlaying.value = false
+        stopDualPlayback()
+
         viewModelScope.launch {
             _isProcessingVocal.value = true
             val result = repository.processVocalRemoval(track) { status ->
@@ -415,6 +421,32 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         _showVocalRemoverScreen.value = show
     }
 
+    fun toggleDualPlayPause() {
+        if (!isDualPlayback) {
+            togglePlayPause()
+            return
+        }
+        val targetPlaying = !(_isPlaying.value)
+        if (targetPlaying) {
+            instrumentalPlayer?.play()
+            vocalPlayer?.play()
+        } else {
+            instrumentalPlayer?.pause()
+            vocalPlayer?.pause()
+        }
+        _isPlaying.value = targetPlaying
+    }
+
+    fun seekDualPlayback(position: Long) {
+        if (!isDualPlayback) {
+            mediaController?.seekTo(position)
+            return
+        }
+        instrumentalPlayer?.seekTo(position)
+        vocalPlayer?.seekTo(position)
+        _currentPosition.value = position
+    }
+
     private fun setupDualPlayback(track: AudioTrack) {
         stopDualPlayback()
         mediaController?.pause()
@@ -452,7 +484,44 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun saveProcessedFiles() {
-        // Placeholder for saving files to internal/external storage
+        val track = currentTrack.value ?: return
+        val trackId = if (track.title.contains("[AI]")) track.id - 777777 else track.id
+        
+        val instFile = java.io.File(context.cacheDir, "instrumental_$trackId.mp3")
+        val vocFile = java.io.File(context.cacheDir, "vocals_$trackId.mp3")
+        
+        if (!instFile.exists() || !vocFile.exists()) {
+            android.widget.Toast.makeText(context, "Файлы не найдены", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val musicDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC)
+                val spetifyDir = java.io.File(musicDir, "SPETify")
+                val instDir = java.io.File(spetifyDir, "instrumentals")
+                val vocDir = java.io.File(spetifyDir, "vocals")
+                
+                instDir.mkdirs()
+                vocDir.mkdirs()
+                
+                val safeTitle = track.title.replace("[AI] ", "").replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                
+                val targetInst = java.io.File(instDir, "$safeTitle [Instrumental].mp3")
+                val targetVoc = java.io.File(vocDir, "$safeTitle [Vocals].mp3")
+                
+                instFile.copyTo(targetInst, overwrite = true)
+                vocFile.copyTo(targetVoc, overwrite = true)
+                
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Сохранено в Music/SPETify", android.widget.Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Ошибка сохранения: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     fun setSleepTimer(totalSeconds: Long?) {

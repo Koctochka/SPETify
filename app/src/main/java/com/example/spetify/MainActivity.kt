@@ -1104,6 +1104,8 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
     val isProcessingVocal by viewModel.isProcessingVocal.collectAsState()
     val processingStatus by viewModel.processingStatus.collectAsState()
     val currentTrack by viewModel.currentTrack.collectAsState()
+    val isPlaying by viewModel.isPlaying.collectAsState()
+    val currentPosition by viewModel.currentPosition.collectAsState()
     val instrumentalVolume by viewModel.instrumentalVolume.collectAsState()
     val vocalsVolume by viewModel.vocalsVolume.collectAsState()
 
@@ -1179,6 +1181,44 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+
+            // Playback Controls
+            if (currentTrack?.title?.contains("[AI]") == true) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Slider(
+                        value = currentPosition.toFloat(),
+                        onValueChange = { viewModel.seekDualPlayback(it.toLong()) },
+                        valueRange = 0f..(currentTrack?.duration?.toFloat() ?: 1f),
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(formatDuration(currentPosition), style = MaterialTheme.typography.bodySmall)
+                        Text(formatDuration(currentTrack?.duration ?: 0L), style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    IconButton(
+                        onClick = { viewModel.toggleDualPlayPause() },
+                        modifier = Modifier.size(64.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.PauseCircleFilled else Icons.Default.PlayCircleFilled,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
 
