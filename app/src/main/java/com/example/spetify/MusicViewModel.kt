@@ -328,7 +328,10 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         if (track == null) return@mapLatest false
         val instFile = java.io.File(context.cacheDir, "instrumental_${track.id}.mp3")
         val vocFile = java.io.File(context.cacheDir, "vocals_${track.id}.mp3")
-        instFile.exists() && vocFile.exists() && instFile.length() > 0 && vocFile.length() > 0
+        
+        val exists = instFile.exists() && vocFile.exists() && instFile.length() > 0 && vocFile.length() > 0
+        android.util.Log.d("VocalRemover", "Checking cache for ID ${track.id}: $exists (Path: ${instFile.absolutePath})")
+        exists
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private val _isDualPlayback = MutableStateFlow(false)
@@ -407,20 +410,24 @@ class MusicViewModel(private val context: Context) : ViewModel() {
 
     fun setVocalRemoverTarget(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
-            // Create a temporary AudioTrack for processing
             val fileName = getFileName(uri) ?: "Selected Track"
-            val id = uri.toString().hashCode().toLong()
+            
+            // Use fileName for a more stable ID across different sessions for the same file
+            val stableId = fileName.hashCode().toLong()
+            
             val track = AudioTrack(
-                id = id,
+                id = stableId,
                 title = fileName.substringBeforeLast('.'),
                 artist = "Unknown",
-                duration = 0, // Will be updated during playback/scan if possible
+                duration = 0,
                 contentUri = uri,
                 fileName = fileName
             )
+            
+            android.util.Log.d("VocalRemover", "Target set: ${track.title}, generated stableId: $stableId")
+            
             _vocalRemoverTargetTrack.value = track
             
-            // Auto stop current dual playback if target changes
             withContext(Dispatchers.Main) {
                 stopDualPlayback()
             }
