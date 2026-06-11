@@ -430,6 +430,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         if (targetPlaying) {
             instrumentalPlayer?.play()
             vocalPlayer?.play()
+            startProgressPolling()
         } else {
             instrumentalPlayer?.pause()
             vocalPlayer?.pause()
@@ -471,6 +472,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         }
         
         _isPlaying.value = true
+        startProgressPolling()
     }
 
     private fun stopDualPlayback() {
@@ -902,29 +904,37 @@ class MusicViewModel(private val context: Context) : ViewModel() {
 
         progressJob = viewModelScope.launch {
             while (isActive) {
-                val controller = mediaController
-                if (controller != null && controller.isPlaying) {
-                    _currentPosition.value = controller.currentPosition
-                    
-                    // Save current position periodically
-                    sharedPrefs.edit().putLong(KEY_LAST_POSITION, controller.currentPosition).apply()
-
-                    // Save metadata periodically to ensure "Instant UI" on next boot is accurate
-                    _currentTrack.value?.let { track ->
-                        sharedPrefs.edit().apply {
-                            putString(KEY_LAST_TITLE, track.title)
-                            putString(KEY_LAST_ARTIST, track.artist)
-                            putString(KEY_LAST_URI, track.contentUri.toString())
-                            putString(KEY_LAST_ART, track.customArtUri)
-                        }.apply()
+                if (isDualPlayback) {
+                    instrumentalPlayer?.let {
+                        if (it.isPlaying) {
+                            _currentPosition.value = it.currentPosition
+                        }
                     }
+                } else {
+                    val controller = mediaController
+                    if (controller != null && controller.isPlaying) {
+                        _currentPosition.value = controller.currentPosition
+                        
+                        // Save current position periodically
+                        sharedPrefs.edit().putLong(KEY_LAST_POSITION, controller.currentPosition).apply()
 
-                    // Also update duration if it's currently 0
-                    if (_currentTrack.value?.duration == 0L && controller.duration > 0) {
-                        _currentTrack.value = _currentTrack.value?.copy(duration = controller.duration)
+                        // Save metadata periodically to ensure "Instant UI" on next boot is accurate
+                        _currentTrack.value?.let { track ->
+                            sharedPrefs.edit().apply {
+                                putString(KEY_LAST_TITLE, track.title)
+                                putString(KEY_LAST_ARTIST, track.artist)
+                                putString(KEY_LAST_URI, track.contentUri.toString())
+                                putString(KEY_LAST_ART, track.customArtUri)
+                            }.apply()
+                        }
+
+                        // Also update duration if it's currently 0
+                        if (_currentTrack.value?.duration == 0L && controller.duration > 0) {
+                            _currentTrack.value = _currentTrack.value?.copy(duration = controller.duration)
+                        }
                     }
                 }
-                delay(1000) // Poll every second for stability
+                delay(500) // Poll more frequently for smoother UI (500ms)
             }
         }
     }
