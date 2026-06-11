@@ -414,6 +414,20 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         _showVocalRemoverScreen.value = show
     }
 
+    fun hasPreviousResult(): Boolean {
+        val track = currentTrack.value ?: return false
+        val instFile = java.io.File(context.cacheDir, "instrumental_${track.id}.mp3")
+        val vocFile = java.io.File(context.cacheDir, "vocals_${track.id}.mp3")
+        return instFile.exists() && vocFile.exists()
+    }
+
+    fun loadPreviousResult() {
+        val track = currentTrack.value ?: return
+        if (hasPreviousResult()) {
+            setupDualPlayback(track)
+        }
+    }
+
     fun toggleDualPlayPause() {
         if (!_isDualPlayback.value) {
             togglePlayPause()

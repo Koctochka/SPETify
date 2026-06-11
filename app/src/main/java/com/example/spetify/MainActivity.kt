@@ -1272,16 +1272,41 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
 
             Spacer(modifier = Modifier.weight(1f))
 
-            Button(
-                onClick = { viewModel.saveProcessedFiles() },
-                enabled = isDualPlayback,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Default.Save, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(if (currentLang == "ru") "Сохранить файлы" else "Save Files")
+                val hasPrevious = viewModel.hasPreviousResult()
+                
+                Button(
+                    onClick = { viewModel.loadPreviousResult() },
+                    enabled = hasPrevious && !isDualPlayback,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.History, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (currentLang == "ru") "Загрузить кэш" else "Load Cached")
+                }
+
+                Button(
+                    onClick = { viewModel.saveProcessedFiles() },
+                    enabled = isDualPlayback,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Save, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (currentLang == "ru") "Сохранить" else "Save")
+                }
             }
         }
     }
