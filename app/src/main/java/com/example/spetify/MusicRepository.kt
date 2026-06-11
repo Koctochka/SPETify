@@ -436,27 +436,35 @@ class MusicRepository(private val context: Context) {
             val response = vocalApi.separateVocals(body)
 
             if (response.isSuccessful) {
-                onProgress("Загрузка результата...")
+                onProgress("Распаковка результата...")
                 val resultFileInstrumental = File(context.cacheDir, "instrumental_${track.id}.mp3")
                 val resultFileVocals = File(context.cacheDir, "vocals_${track.id}.mp3")
                 
-                Log.d("MusicRepository", "Response successful. Downloading to: ${resultFileInstrumental.absolutePath}")
-
                 response.body()?.byteStream()?.use { input ->
-                    FileOutputStream(resultFileInstrumental).use { output ->
-                        val bytesCopied = input.copyTo(output)
-                        Log.d("MusicRepository", "Downloaded $bytesCopied bytes.")
+                    val zipInputStream = java.util.zip.ZipInputStream(input)
+                    var entry = zipInputStream.getNextEntry()
+                    while (entry != null) {
+                        val outputFile = when {
+                            entry.name.contains("no_vocals") -> resultFileInstrumental
+                            entry.name.contains("vocals") -> resultFileVocals
+                            else -> null
+                        }
+
+                        if (outputFile != null) {
+                            FileOutputStream(outputFile).use { output ->
+                                zipInputStream.copyTo(output)
+                            }
+                        }
+                        zipInputStream.closeEntry()
+                        entry = zipInputStream.getNextEntry()
                     }
                 }
                 
-                if (resultFileInstrumental.exists() && resultFileInstrumental.length() > 0) {
-                    if (!resultFileVocals.exists()) {
-                        resultFileInstrumental.copyTo(resultFileVocals, overwrite = true)
-                    }
+                if (resultFileInstrumental.exists() && resultFileVocals.exists()) {
                     onProgress("Готово!")
                     Pair(resultFileInstrumental, resultFileVocals)
                 } else {
-                    Log.e("MusicRepository", "Downloaded file is empty or missing.")
+                    Log.e("MusicRepository", "Failed to extract both stems from ZIP")
                     null
                 }
             } else {
