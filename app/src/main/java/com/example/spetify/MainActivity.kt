@@ -1106,6 +1106,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
     val currentTrack by viewModel.currentTrack.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val currentPosition by viewModel.currentPosition.collectAsState()
+    val isDualPlayback by viewModel.isDualPlayback.collectAsState()
     val instrumentalVolume by viewModel.instrumentalVolume.collectAsState()
     val vocalsVolume by viewModel.vocalsVolume.collectAsState()
 
@@ -1185,7 +1186,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
             }
 
             // Playback Controls
-            if (currentTrack?.title?.contains("[AI]") == true) {
+            if (isDualPlayback) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -1273,7 +1274,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
 
             Button(
                 onClick = { viewModel.saveProcessedFiles() },
-                enabled = currentTrack?.title?.contains("[AI]") == true,
+                enabled = isDualPlayback,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
