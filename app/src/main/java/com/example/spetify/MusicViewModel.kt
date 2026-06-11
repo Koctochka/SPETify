@@ -321,6 +321,8 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     val showVocalRemoverScreen = _showVocalRemoverScreen.asStateFlow()
 
     private var vocalPlayer: androidx.media3.exoplayer.ExoPlayer? = null
+    private var instrumentalPlayer: androidx.media3.exoplayer.ExoPlayer? = null
+    private var isDualPlayback = false
 
     private var sleepTimerJob: kotlinx.coroutines.Job? = null
 
@@ -378,12 +380,16 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                 val (instrumentalFile, vocalsFile) = result
                 val instrumentalUri = Uri.fromFile(instrumentalFile)
                 
+                android.widget.Toast.makeText(context, "Обработка завершена. Запуск...", android.widget.Toast.LENGTH_SHORT).show()
+
                 val instrumentalTrack = track.copy(
                     id = track.id + 777777,
                     title = "[AI] " + track.title,
                     contentUri = instrumentalUri
                 )
                 playTrack(instrumentalTrack)
+            } else {
+                android.widget.Toast.makeText(context, "Ошибка при обработке файла", android.widget.Toast.LENGTH_LONG).show()
             }
             _isProcessingVocal.value = false
         }
@@ -391,15 +397,58 @@ class MusicViewModel(private val context: Context) : ViewModel() {
 
     fun setInstrumentalVolume(volume: Float) {
         _instrumentalVolume.value = volume
-        mediaController?.volume = volume
+        if (isDualPlayback) {
+            instrumentalPlayer?.volume = volume
+        } else {
+            mediaController?.volume = volume
+        }
     }
 
     fun setVocalsVolume(volume: Float) {
         _vocalsVolume.value = volume
+        if (isDualPlayback) {
+            vocalPlayer?.volume = volume
+        }
     }
 
     fun toggleVocalRemoverScreen(show: Boolean) {
         _showVocalRemoverScreen.value = show
+    }
+
+    private fun setupDualPlayback(track: AudioTrack) {
+        stopDualPlayback()
+        mediaController?.pause()
+        isDualPlayback = true
+        _currentTrack.value = track
+        
+        val instFile = java.io.File(context.cacheDir, "instrumental_${track.id - 777777}.mp3")
+        val vocFile = java.io.File(context.cacheDir, "vocals_${track.id - 777777}.mp3")
+
+        instrumentalPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            setMediaItem(androidx.media3.common.MediaItem.fromUri(Uri.fromFile(instFile)))
+            volume = _instrumentalVolume.value
+            prepare()
+            play()
+        }
+
+        vocalPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            setMediaItem(androidx.media3.common.MediaItem.fromUri(Uri.fromFile(vocFile)))
+            volume = _vocalsVolume.value
+            prepare()
+            play()
+        }
+        
+        _isPlaying.value = true
+    }
+
+    private fun stopDualPlayback() {
+        if (!isDualPlayback) return
+        isDualPlayback = false
+        instrumentalPlayer?.release()
+        vocalPlayer?.release()
+        instrumentalPlayer = null
+        vocalPlayer = null
+        _isPlaying.value = false
     }
 
     fun saveProcessedFiles() {
@@ -1009,6 +1058,14 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun playTrack(track: AudioTrack, playlist: List<AudioTrack>? = null) {
+        // If it's an AI track, stop dual playback if active
+        if (track.title.contains("[AI]")) {
+            setupDualPlayback(track)
+            return
+        } else {
+            stopDualPlayback()
+        }
+
         // If clicking the track that is already loaded, just resume it
         if (_currentTrack.value?.id == track.id) {
             mediaController?.let { 

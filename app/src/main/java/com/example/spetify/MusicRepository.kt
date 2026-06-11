@@ -10,11 +10,13 @@ import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.*
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.asRequestBody
 import retrofit2.Retrofit
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 data class DirectoryContent(
     val folders: List<Folder>,
@@ -37,8 +39,15 @@ private data class CachedMetadata(
 class MusicRepository(private val context: Context) {
     private val playlistDao = AppDatabase.getDatabase(context).playlistDao()
 
+    private val okHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.MINUTES)
+        .readTimeout(15, TimeUnit.MINUTES)
+        .writeTimeout(15, TimeUnit.MINUTES)
+        .build()
+
     private val vocalApi = Retrofit.Builder()
         .baseUrl("http://192.168.1.15:8000") // TODO: User should update this
+        .client(okHttpClient)
         .build()
         .create(VocalRemoverApi::class.java)
 
@@ -431,27 +440,31 @@ class MusicRepository(private val context: Context) {
                 val resultFileInstrumental = File(context.cacheDir, "instrumental_${track.id}.mp3")
                 val resultFileVocals = File(context.cacheDir, "vocals_${track.id}.mp3")
                 
+                Log.d("MusicRepository", "Response successful. Downloading to: ${resultFileInstrumental.absolutePath}")
+
                 response.body()?.byteStream()?.use { input ->
                     FileOutputStream(resultFileInstrumental).use { output ->
-                        input.copyTo(output)
+                        val bytesCopied = input.copyTo(output)
+                        Log.d("MusicRepository", "Downloaded $bytesCopied bytes.")
                     }
                 }
                 
-                // Note: For true dual stems, the server should return two files.
-                // For now, we reuse the same file or assume the server handles two requests if needed.
-                // We'll proceed with this structure for the UI implementation.
-                if (!resultFileVocals.exists()) {
-                    resultFileInstrumental.copyTo(resultFileVocals, overwrite = true)
+                if (resultFileInstrumental.exists() && resultFileInstrumental.length() > 0) {
+                    if (!resultFileVocals.exists()) {
+                        resultFileInstrumental.copyTo(resultFileVocals, overwrite = true)
+                    }
+                    onProgress("Готово!")
+                    Pair(resultFileInstrumental, resultFileVocals)
+                } else {
+                    Log.e("MusicRepository", "Downloaded file is empty or missing.")
+                    null
                 }
-
-                onProgress("Готово!")
-                Pair(resultFileInstrumental, resultFileVocals)
             } else {
-                Log.e("MusicRepository", "Vocal removal failed: ${response.errorBody()?.string()}")
+                Log.e("MusicRepository", "Vocal removal failed: ${response.code()} ${response.message()}")
                 null
             }
         } catch (e: Exception) {
-            Log.e("MusicRepository", "Error during vocal removal: ${e.message}")
+            Log.e("MusicRepository", "Error during vocal removal", e)
             null
         }
     }

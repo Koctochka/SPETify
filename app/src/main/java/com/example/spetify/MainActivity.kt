@@ -1111,6 +1111,8 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
         // Header
         Row(
@@ -1256,6 +1258,8 @@ fun SettingsScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
         // Header
         Row(
@@ -1377,6 +1381,8 @@ fun HelpInfoScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
         // Header
         Row(
