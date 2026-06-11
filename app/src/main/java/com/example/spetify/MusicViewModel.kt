@@ -412,8 +412,12 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val fileName = getFileName(uri) ?: "Selected Track"
             
-            // Use fileName for a more stable ID across different sessions for the same file
-            val stableId = fileName.hashCode().toLong()
+            // Critical Fix: Use a consistent ID generation
+            val stableId = if (uri.scheme == "file") {
+                uri.path.hashCode().toLong()
+            } else {
+                uri.toString().hashCode().toLong()
+            }
             
             val track = AudioTrack(
                 id = stableId,
@@ -424,7 +428,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                 fileName = fileName
             )
             
-            android.util.Log.d("VocalRemover", "Target set: ${track.title}, generated stableId: $stableId")
+            android.util.Log.d("VocalRemover", "Target set: ${track.title}, ID: $stableId, URI: $uri")
             
             _vocalRemoverTargetTrack.value = track
             
@@ -552,14 +556,16 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun saveProcessedFiles() {
-        val track = currentTrack.value ?: return
-        val trackId = if (track.title.contains("[AI]")) track.id - 777777 else track.id
+        val track = _vocalRemoverTargetTrack.value ?: return
+        val trackId = track.id
         
         val instFile = java.io.File(context.cacheDir, "instrumental_$trackId.mp3")
         val vocFile = java.io.File(context.cacheDir, "vocals_$trackId.mp3")
         
+        android.util.Log.d("VocalRemover", "Saving: Looking for files for ID $trackId at ${instFile.absolutePath}")
+
         if (!instFile.exists() || !vocFile.exists()) {
-            android.widget.Toast.makeText(context, "Файлы не найдены", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, "Файлы не найдены (ID: $trackId)", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
 

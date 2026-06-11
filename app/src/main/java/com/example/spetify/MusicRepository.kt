@@ -440,6 +440,8 @@ class MusicRepository(private val context: Context) {
                 val resultFileInstrumental = File(context.cacheDir, "instrumental_${track.id}.mp3")
                 val resultFileVocals = File(context.cacheDir, "vocals_${track.id}.mp3")
                 
+                android.util.Log.d("VocalRemover", "Saving to cache for ID ${track.id}: ${resultFileInstrumental.absolutePath}")
+
                 response.body()?.byteStream()?.use { input ->
                     val zipInputStream = java.util.zip.ZipInputStream(input)
                     var entry = zipInputStream.getNextEntry()
