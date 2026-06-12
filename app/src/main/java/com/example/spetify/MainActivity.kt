@@ -1117,221 +1117,228 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
         uri?.let { viewModel.setVocalRemoverTarget(it) }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .navigationBarsPadding()
+    Surface(
+        modifier = Modifier.fillMaxSize().pointerInput(Unit) {
+            detectTapGestures { /* Block clicks to underlying screens */ }
+        },
+        color = MaterialTheme.colorScheme.background
     ) {
-        // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = {
-                onBack()
-            }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
-            }
-            Text(
-                text = if (currentLang == "ru") "Удаление вокала" else "Vocal Remover",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+                .background(MaterialTheme.colorScheme.background)
+                .statusBarsPadding()
+                .navigationBarsPadding()
         ) {
-            // File Selection Area
-            OutlinedCard(
-                onClick = { if (!isProcessingVocal) filePickerLauncher.launch("audio/*") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(24.dp),
-                    contentAlignment = Alignment.Center
+                IconButton(onClick = {
+                    onBack()
+                }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
+                }
+                Text(
+                    text = if (currentLang == "ru") "Удаление вокала" else "Vocal Remover",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                // File Selection Area
+                OutlinedCard(
+                    onClick = { if (!isProcessingVocal) filePickerLauncher.launch("audio/*") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
                 ) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AudioFile,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = targetTrack?.title ?: (if (currentLang == "ru") "Нажмите, чтобы выбрать файл" else "Tap to select audio file"),
+                                style = MaterialTheme.typography.titleMedium,
+                                textAlign = TextAlign.Center
+                            )
+                            if (targetTrack != null) {
+                                Text(
+                                    text = if (currentLang == "ru") "Файл выбран" else "File selected",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = { viewModel.removeVocalFromCurrentTrack() },
+                    enabled = !isProcessingVocal && targetTrack != null,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.AutoFixHigh, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (currentLang == "ru") "Запустить обработку (AI)" else "Start AI Processing")
+                }
+
+                if (isProcessingVocal) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.AudioFile,
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         Text(
-                            text = targetTrack?.title ?: (if (currentLang == "ru") "Нажмите, чтобы выбрать файл" else "Tap to select audio file"),
-                            style = MaterialTheme.typography.titleMedium,
-                            textAlign = TextAlign.Center
+                            text = processingStatus,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (targetTrack != null) {
-                            Text(
-                                text = if (currentLang == "ru") "Файл выбран" else "File selected",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
+                    }
+                }
+
+                // Playback Controls
+                if (isDualPlayback) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Slider(
+                            value = currentPosition.toFloat(),
+                            onValueChange = { viewModel.seekDualPlayback(it.toLong()) },
+                            valueRange = 0f..(targetTrack?.duration?.toFloat() ?: 1f).coerceAtLeast(1f),
+                            colors = SliderDefaults.colors(
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(formatDuration(currentPosition), style = MaterialTheme.typography.bodySmall)
+                            Text(formatDuration(targetTrack?.duration ?: 0L), style = MaterialTheme.typography.bodySmall)
+                        }
+
+                        IconButton(
+                            onClick = { viewModel.toggleDualPlayPause() },
+                            modifier = Modifier.size(64.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.PauseCircleFilled else Icons.Default.PlayCircleFilled,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
                 }
-            }
 
-            Button(
-                onClick = { viewModel.removeVocalFromCurrentTrack() },
-                enabled = !isProcessingVocal && targetTrack != null,
-                modifier = Modifier.fillMaxWidth(),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.AutoFixHigh, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(if (currentLang == "ru") "Запустить обработку (AI)" else "Start AI Processing")
-            }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
 
-            if (isProcessingVocal) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    Text(
-                        text = processingStatus,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                // Volume Controls
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (currentLang == "ru") "Инструментал" else "Instrumental",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                        Slider(
+                            value = instrumentalVolume,
+                            onValueChange = { viewModel.setInstrumentalVolume(it) },
+                            valueRange = 0f..1f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
+                    }
+
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.RecordVoiceOver, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (currentLang == "ru") "Вокал" else "Vocals",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                        Slider(
+                            value = vocalsVolume,
+                            onValueChange = { viewModel.setVocalsVolume(it) },
+                            valueRange = 0f..1f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
+                    }
                 }
-            }
 
-            // Playback Controls
-            if (isDualPlayback) {
-                Column(
+                Spacer(modifier = Modifier.weight(1f))
+
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Slider(
-                        value = currentPosition.toFloat(),
-                        onValueChange = { viewModel.seekDualPlayback(it.toLong()) },
-                        valueRange = 0f..(targetTrack?.duration?.toFloat() ?: 1f).coerceAtLeast(1f),
-                        colors = SliderDefaults.colors(
-                            thumbColor = MaterialTheme.colorScheme.primary,
-                            activeTrackColor = MaterialTheme.colorScheme.primary
-                        )
-                    )
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Button(
+                        onClick = { viewModel.loadPreviousResult() },
+                        enabled = hasSavedResult && !isDualPlayback,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
                     ) {
-                        Text(formatDuration(currentPosition), style = MaterialTheme.typography.bodySmall)
-                        Text(formatDuration(targetTrack?.duration ?: 0L), style = MaterialTheme.typography.bodySmall)
+                        Icon(Icons.Default.History, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (currentLang == "ru") "Загрузить сохран." else "Load Saved")
                     }
 
-                    IconButton(
-                        onClick = { viewModel.toggleDualPlayPause() },
-                        modifier = Modifier.size(64.dp)
+                    Button(
+                        onClick = { viewModel.saveProcessedFiles() },
+                        enabled = isDualPlayback,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
                     ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.PauseCircleFilled else Icons.Default.PlayCircleFilled,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
-
-            // Volume Controls
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Default.Save, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (currentLang == "ru") "Инструментал" else "Instrumental",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
+                        Text(if (currentLang == "ru") "Сохранить" else "Save")
                     }
-                    Slider(
-                        value = instrumentalVolume,
-                        onValueChange = { viewModel.setInstrumentalVolume(it) },
-                        valueRange = 0f..1f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = MaterialTheme.colorScheme.primary,
-                            activeTrackColor = MaterialTheme.colorScheme.primary
-                        )
-                    )
-                }
-
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.RecordVoiceOver, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (currentLang == "ru") "Вокал" else "Vocals",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                    Slider(
-                        value = vocalsVolume,
-                        onValueChange = { viewModel.setVocalsVolume(it) },
-                        valueRange = 0f..1f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = MaterialTheme.colorScheme.primary,
-                            activeTrackColor = MaterialTheme.colorScheme.primary
-                        )
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = { viewModel.loadPreviousResult() },
-                    enabled = hasSavedResult && !isDualPlayback,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Default.History, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (currentLang == "ru") "Загрузить сохран." else "Load Saved")
-                }
-
-                Button(
-                    onClick = { viewModel.saveProcessedFiles() },
-                    enabled = isDualPlayback,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                    ),
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Default.Save, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (currentLang == "ru") "Сохранить" else "Save")
                 }
             }
         }

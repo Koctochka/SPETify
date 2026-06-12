@@ -329,6 +329,12 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     val hasSavedResult = _vocalRemoverTargetTrack.mapLatest { track ->
         if (track == null) return@mapLatest false
         
+        // Check 1: Internal Cache
+        val cacheInst = java.io.File(context.cacheDir, "instrumental_${track.id}.mp3")
+        val cacheVoc = java.io.File(context.cacheDir, "vocals_${track.id}.mp3")
+        if (cacheInst.exists() && cacheVoc.exists() && cacheInst.length() > 0) return@mapLatest true
+
+        // Check 2: Public Storage (Music/SPETify)
         val musicDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC)
         val spetifyDir = java.io.File(musicDir, "SPETify")
         val safeTitle = track.title.replace(Regex("[\\\\/:*?\"<>|]"), "_")
@@ -337,7 +343,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         val targetVoc = java.io.File(spetifyDir, "vocals/$safeTitle [Vocals].mp3")
         
         val exists = targetInst.exists() && targetVoc.exists()
-        android.util.Log.d("VocalRemover", "Checking saved files for ${track.title}: $exists")
+        android.util.Log.d("VocalRemover", "Checking results for ${track.title}: cache=${cacheInst.exists()}, public=$exists")
         exists
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
@@ -491,6 +497,16 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     fun loadPreviousResult() {
         val track = _vocalRemoverTargetTrack.value ?: return
         if (hasSavedResult.value) {
+            // Priority 1: Internal Cache
+            val cacheInst = java.io.File(context.cacheDir, "instrumental_${track.id}.mp3")
+            val cacheVoc = java.io.File(context.cacheDir, "vocals_${track.id}.mp3")
+            
+            if (cacheInst.exists() && cacheVoc.exists()) {
+                setupDualPlaybackFromFiles(track, cacheInst, cacheVoc)
+                return
+            }
+
+            // Priority 2: Public Storage
             val musicDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC)
             val spetifyDir = java.io.File(musicDir, "SPETify")
             val safeTitle = track.title.replace(Regex("[\\\\/:*?\"<>|]"), "_")
@@ -498,7 +514,9 @@ class MusicViewModel(private val context: Context) : ViewModel() {
             val targetInst = java.io.File(spetifyDir, "instrumentals/$safeTitle [Instrumental].mp3")
             val targetVoc = java.io.File(spetifyDir, "vocals/$safeTitle [Vocals].mp3")
 
-            setupDualPlaybackFromFiles(track, targetInst, targetVoc)
+            if (targetInst.exists() && targetVoc.exists()) {
+                setupDualPlaybackFromFiles(track, targetInst, targetVoc)
+            }
         }
     }
 
