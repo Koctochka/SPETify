@@ -231,6 +231,8 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         private const val KEY_LAST_ARTIST = "last_artist"
         private const val KEY_LAST_URI = "last_uri"
         private const val KEY_LAST_ART = "last_art"
+        private const val KEY_VOCAL_REMOVER_URI = "vocal_remover_uri"
+        private const val KEY_VOCAL_REMOVER_NAME = "vocal_remover_name"
     }
 
     private val _shuffleMode = MutableStateFlow(false)
@@ -435,6 +437,11 @@ class MusicViewModel(private val context: Context) : ViewModel() {
             
             android.util.Log.d("VocalRemover", "Target set: ${track.title}, ID: $stableId, URI: $uri")
             
+            sharedPrefs.edit().apply {
+                putString(KEY_VOCAL_REMOVER_URI, uri.toString())
+                putString(KEY_VOCAL_REMOVER_NAME, fileName)
+            }.apply()
+
             _vocalRemoverTargetTrack.value = track
             
             withContext(Dispatchers.Main) {
@@ -779,6 +786,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
 
         // Step 0: Immediate UI restoration from Prefs (Sync)
         restoreSessionMetadata()
+        restoreVocalRemoverTarget()
 
         val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
@@ -877,6 +885,27 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         }, MoreExecutors.directExecutor())
         
         loadTracks()
+    }
+
+    private fun restoreVocalRemoverTarget() {
+        val uriStr = sharedPrefs.getString(KEY_VOCAL_REMOVER_URI, null)
+        val fileName = sharedPrefs.getString(KEY_VOCAL_REMOVER_NAME, null)
+        if (uriStr != null && fileName != null) {
+            val uri = Uri.parse(uriStr)
+            val stableId = if (uri.scheme == "file") {
+                uri.path.hashCode().toLong()
+            } else {
+                uri.toString().hashCode().toLong()
+            }
+            _vocalRemoverTargetTrack.value = AudioTrack(
+                id = stableId,
+                title = fileName.substringBeforeLast('.'),
+                artist = "Unknown",
+                duration = 0,
+                contentUri = uri,
+                fileName = fileName
+            )
+        }
     }
 
     private fun restoreSessionMetadata() {
@@ -1223,8 +1252,12 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun playTrack(track: AudioTrack, playlist: List<AudioTrack>? = null) {
-        // If it's an AI track, stop dual playback if active
-        stopDualPlayback()
+        // If it's an AI track, pause dual playback if active
+        if (_isDualPlayback.value) {
+            instrumentalPlayer?.pause()
+            vocalPlayer?.pause()
+            _isPlaying.value = false
+        }
 
         // If clicking the track that is already loaded, just resume it
         if (_currentTrack.value?.id == track.id) {

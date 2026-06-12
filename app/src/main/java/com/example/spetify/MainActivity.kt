@@ -469,7 +469,7 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
             onSettings = { viewModel.toggleSettings(true) },
             onHelpInfo = { viewModel.toggleHelp(true) },
             onSleepTimer = { showSleepTimerDialog = true },
-            onVocalRemover = { viewModel.startVocalRemover() },
+            onVocalRemover = { viewModel.toggleVocalRemoverScreen(true) },
             onCloseApp = { viewModel.closeApp() },
             lang = lang
         )
@@ -1158,28 +1158,32 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.AudioFile,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = targetTrack?.title ?: (if (currentLang == "ru") "Нажмите, чтобы выбрать файл" else "Tap to select audio file"),
-                        style = MaterialTheme.typography.titleMedium,
-                        textAlign = TextAlign.Center
-                    )
-                    if (targetTrack != null) {
-                        Text(
-                            text = if (currentLang == "ru") "Файл выбран" else "File selected",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AudioFile,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.primary
                         )
+                        Text(
+                            text = targetTrack?.title ?: (if (currentLang == "ru") "Нажмите, чтобы выбрать файл" else "Tap to select audio file"),
+                            style = MaterialTheme.typography.titleMedium,
+                            textAlign = TextAlign.Center
+                        )
+                        if (targetTrack != null) {
+                            Text(
+                                text = if (currentLang == "ru") "Файл выбран" else "File selected",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }
@@ -1361,7 +1365,7 @@ fun SettingsScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
             }
             Text(
-                text = if (currentLang == "ru") "Меню" else "Menu",
+                text = Localization.getString("app_settings", currentLang),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -1386,15 +1390,6 @@ fun SettingsScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
             title = if (currentLang == "ru") "Интерфейс" else "Interface",
             subtitle = currentTheme,
             onClick = { showThemeDialog = true }
-        )
-        SettingsItem(
-            icon = Icons.Default.MicExternalOff, 
-            title = if (currentLang == "ru") "Удаление вокала" else "Vocal Remover",
-            subtitle = null,
-            onClick = { 
-                viewModel.toggleVocalRemoverScreen(true)
-                onBack()
-            }
         )
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
@@ -1618,7 +1613,7 @@ fun GlobalMoreActionDialog(
         text = {
             Column {
                 ListItem(
-                    headlineContent = { Text(Localization.getString("settings", lang), color = MaterialTheme.colorScheme.onBackground) },
+                    headlineContent = { Text(Localization.getString("app_settings", lang), color = MaterialTheme.colorScheme.onBackground) },
                     leadingContent = { Icon(Icons.Default.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                     modifier = Modifier.clickable { onSettings(); onDismiss() },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -1637,7 +1632,6 @@ fun GlobalMoreActionDialog(
                 )
                 ListItem(
                     headlineContent = { Text(Localization.getString("vocal_remover", lang), color = MaterialTheme.colorScheme.onBackground) },
-                    supportingContent = { Text(Localization.getString("coming_soon", lang), color = MaterialTheme.colorScheme.onSurfaceVariant) },
                     leadingContent = { Icon(Icons.Default.MicExternalOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                     modifier = Modifier.clickable { onVocalRemover(); onDismiss() },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)

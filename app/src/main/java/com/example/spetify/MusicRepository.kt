@@ -46,7 +46,7 @@ class MusicRepository(private val context: Context) {
         .build()
 
     private val vocalApi = Retrofit.Builder()
-        .baseUrl("http://192.168.1.15:8000") // TODO: User should update this
+        .baseUrl("http://157.22.252.140:8000") // 192.168.1.15
         .client(okHttpClient)
         .build()
         .create(VocalRemoverApi::class.java)
