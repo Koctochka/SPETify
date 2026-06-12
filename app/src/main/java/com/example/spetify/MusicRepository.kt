@@ -72,19 +72,25 @@ class MusicRepository(private val context: Context) {
         val folders = mutableListOf<Folder>()
         val tracks = mutableListOf<AudioTrack>()
         
-        val documentId = if (DocumentsContract.isDocumentUri(context, directoryUri)) {
-            DocumentsContract.getDocumentId(directoryUri)
+        // Use DocumentFile to handle URI complexity, but we'll still query manually for speed if possible
+        val root = DocumentFile.fromTreeUri(context, directoryUri)
+        val childrenUri = if (root != null && root.isDirectory) {
+            DocumentsContract.buildChildDocumentsUriUsingTree(directoryUri, DocumentsContract.getDocumentId(root.uri))
         } else {
-            DocumentsContract.getTreeDocumentId(directoryUri)
+            val docId = if (DocumentsContract.isDocumentUri(context, directoryUri)) {
+                DocumentsContract.getDocumentId(directoryUri)
+            } else {
+                DocumentsContract.getTreeDocumentId(directoryUri)
+            }
+            DocumentsContract.buildChildDocumentsUriUsingTree(directoryUri, docId)
         }
-        
-        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(directoryUri, documentId)
         
         val projection = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
             DocumentsContract.Document.COLUMN_MIME_TYPE,
-            DocumentsContract.Document.COLUMN_LAST_MODIFIED
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            DocumentsContract.Document.COLUMN_SIZE
         )
 
         try {
@@ -98,6 +104,7 @@ class MusicRepository(private val context: Context) {
                     val childDocId = cursor.getString(idIdx)
                     val name = cursor.getString(nameIdx)
                     val mime = cursor.getString(mimeIdx)
+                    
                     val childUri = DocumentsContract.buildDocumentUriUsingTree(directoryUri, childDocId)
                     val dateAdded = if (modIdx != -1) cursor.getLong(modIdx) else 0L
 
@@ -105,21 +112,51 @@ class MusicRepository(private val context: Context) {
                         folders.add(Folder(name ?: "Unknown Folder", childUri))
                     } else if (isAudioMime(mime) || isAudioExtension(name)) {
                         val id = childUri.toString().hashCode().toLong()
-                        // Initially add with file name as title and placeholders
                         tracks.add(AudioTrack(
                             id = id,
                             title = name?.substringBeforeLast('.') ?: "Unknown",
                             artist = "Unknown Artist",
                             duration = 0,
                             contentUri = childUri,
-                            fileName = name, // Keep original name with extension
+                            fileName = name,
                             dateAdded = dateAdded
                         ))
                     }
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            android.util.Log.e("MusicRepository", "Fast scan failed, trying DocumentFile fallback: ${e.message}")
+        }
+
+        // Fallback if no tracks found (sometimes fast query fails on specific subfolders)
+        if (tracks.isEmpty() && folders.isEmpty()) {
+            val docFile = if (DocumentsContract.isDocumentUri(context, directoryUri)) {
+                DocumentFile.fromSingleUri(context, directoryUri)
+            } else {
+                DocumentFile.fromTreeUri(context, directoryUri)
+            }
+            
+            docFile?.listFiles()?.forEach { file ->
+                val name = file.name
+                val mime = file.type
+                val uri = file.uri
+                val dateAdded = file.lastModified()
+
+                if (file.isDirectory) {
+                    folders.add(Folder(name ?: "Unknown Folder", uri))
+                } else if (isAudioMime(mime) || isAudioExtension(name)) {
+                    val id = uri.toString().hashCode().toLong()
+                    tracks.add(AudioTrack(
+                        id = id,
+                        title = name?.substringBeforeLast('.') ?: "Unknown",
+                        artist = "Unknown Artist",
+                        duration = 0,
+                        contentUri = uri,
+                        fileName = name,
+                        dateAdded = dateAdded
+                    ))
+                }
+            }
         }
         
         var path = directoryUri.path?.substringAfterLast(':')?.replace("/", " > ") ?: ""
@@ -253,12 +290,19 @@ class MusicRepository(private val context: Context) {
         metadataCache.remove(uriString)
     }
 
-    private fun isAudioMime(mime: String?): Boolean = mime?.startsWith("audio/") == true
+    private fun isAudioMime(mime: String?): Boolean {
+        if (mime == null) return false
+        return mime.startsWith("audio/") || 
+               mime == "application/ogg" || 
+               mime == "application/x-flac" ||
+               mime == "application/octet-stream" // Some files might be generic
+    }
 
     private fun isAudioExtension(name: String?): Boolean {
         val lower = name?.lowercase() ?: return false
         return lower.endsWith(".mp3") || lower.endsWith(".flac") || lower.endsWith(".wav") || 
-               lower.endsWith(".m4a") || lower.endsWith(".ogg") || lower.endsWith(".aac")
+               lower.endsWith(".m4a") || lower.endsWith(".ogg") || lower.endsWith(".aac") ||
+               lower.endsWith(".opus") || lower.endsWith(".m4b") || lower.endsWith(".wma")
     }
 
     private fun extractMetadata(uri: Uri, fileName: String?): CachedMetadata {
