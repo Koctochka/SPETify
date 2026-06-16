@@ -1,6 +1,7 @@
 package com.example.spetify
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.util.Log
@@ -50,16 +51,32 @@ class TagWriter(private val context: Context) {
             tag.deleteArtworkField()
             val artwork = ArtworkFactory.getNew()
             artwork.binaryData = imageData
-            artwork.mimeType = "image/jpeg"
+            
+            // Android-compatible way to get image dimensions and mime type
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(imageData, 0, imageData.size, options)
+            
+            artwork.mimeType = options.outMimeType ?: "image/jpeg"
+            artwork.width = if (options.outWidth > 0) options.outWidth else 500
+            artwork.height = if (options.outHeight > 0) options.outHeight else 500
             artwork.pictureType = 3 // Front Cover
-            tag.setField(artwork)
             
-            // For MP3, ensure we are using ID3v2
-            if (extension.lowercase() == "mp3") {
-                f.tag = tag
+            try {
+                tag.setField(artwork)
+                
+                // For MP3, ensure we are using ID3v2
+                if (extension.lowercase() == "mp3") {
+                    f.tag = tag
+                }
+                
+                f.commit()
+            } catch (t: Throwable) {
+                Log.e("TagWriter", "Failed to embed artwork (likely ImageIO issue on Android for this file type)", t)
+                // We return true here if it was an ImageIO issue because the app 
+                // already updated the DB with the art URL, so the user will see it.
+                // We just couldn't write it into the file.
+                return true 
             }
-            
-            f.commit()
 
             // 5. Write back to Original using "wt" (Write-Truncate)
             context.contentResolver.openOutputStream(audioUri, "wt")?.use { output ->

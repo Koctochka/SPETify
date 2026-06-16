@@ -1852,7 +1852,12 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                     ?: _currentQueue.value.find { it.id == trackId }
                     ?: repository.getTrackFromCache(trackId)
                 
-                val success = track?.let { TagWriter(context).writeAlbumArtToFile(it.contentUri, uri.toString()) } ?: false
+                val success = try {
+                    track?.let { TagWriter(context).writeAlbumArtToFile(it.contentUri, uri.toString()) } ?: false
+                } catch (t: Throwable) {
+                    android.util.Log.e("MusicViewModel", "Critical error writing art", t)
+                    false
+                }
                 if (success && track != null) {
                     refreshTrackAfterTagUpdate(trackId, track.contentUri)
                 }
@@ -1861,7 +1866,9 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun autoSearchArt(track: AudioTrack) {
-        viewModelScope.launch {
+        viewModelScope.launch(CoroutineExceptionHandler { _, t -> 
+            android.util.Log.e("MusicViewModel", "Auto search failed", t)
+        }) {
             val client = okhttp3.OkHttpClient()
             val searchTerm = if (track.artist == "<unknown>") track.title else "${track.artist} ${track.title}"
             val encodedTerm = withContext(Dispatchers.IO) { java.net.URLEncoder.encode(searchTerm, "UTF-8") }
@@ -1902,7 +1909,12 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                     playlistDao.updateTrackMetadata(meta.copy(customArtUri = resultUrl))
                     
                     // Write to physical file
-                    val success = TagWriter(context).writeAlbumArtToFile(track.contentUri, resultUrl)
+                    val success = try {
+                        TagWriter(context).writeAlbumArtToFile(track.contentUri, resultUrl)
+                    } catch (t: Throwable) {
+                        android.util.Log.e("MusicViewModel", "Error embedding iTunes art", t)
+                        false
+                    }
                     if (success) {
                         refreshTrackAfterTagUpdate(track.id, track.contentUri)
                     }
@@ -1949,7 +1961,12 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                         playlistDao.updateTrackMetadata(meta.copy(customArtUri = artUrl))
                         
                         // 2. Physical Embedding into the file
-                        val success = TagWriter(context).writeAlbumArtToFile(track.contentUri, artUrl)
+                        val success = try {
+                            TagWriter(context).writeAlbumArtToFile(track.contentUri, artUrl)
+                        } catch (t: Throwable) {
+                            android.util.Log.e("MusicViewModel", "Error embedding YouTube art", t)
+                            false
+                        }
                         
                         // 3. Refresh UI and Notifications
                         if (success) {
