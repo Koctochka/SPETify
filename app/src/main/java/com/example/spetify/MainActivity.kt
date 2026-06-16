@@ -215,6 +215,8 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
     var trackIndexToRemoveFromQueue by remember { mutableStateOf<Int?>(null) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
     var playlistToMoreMenu by remember { mutableStateOf<Playlist?>(null) }
+    var playlistToImportInto by remember { mutableStateOf<Playlist?>(null) }
+    var importedM3uUri by remember { mutableStateOf<Uri?>(null) }
     var trackToDeletePermanently by remember { mutableStateOf<AudioTrack?>(null) }
     val showQueueManager by viewModel.showQueueManager.collectAsState()
     val savedQueues by viewModel.savedQueues.collectAsState(initial = emptyList())
@@ -249,7 +251,14 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
     val m3uImportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
-        uri?.let { viewModel.importM3U(it) }
+        uri?.let { 
+            if (playlistToImportInto != null) {
+                viewModel.importM3U(it, playlistToImportInto!!.id)
+                playlistToImportInto = null
+            } else {
+                importedM3uUri = it 
+            }
+        }
     }
 
     if (pagerState.currentPage == 2) {
@@ -397,7 +406,10 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
                             3 -> { // Library (Playlists)
                                 if (activePlaylist == null) {
                                     Column(modifier = Modifier.fillMaxSize()) {
-                                        LibraryHeader(onCreateClick = { showCreatePlaylistDialog = true })
+                                        LibraryHeader(
+                                            onCreateClick = { showCreatePlaylistDialog = true },
+                                            onImportClick = { m3uImportLauncher.launch("*/*") }
+                                        )
                                         PlaylistList(
                                             playlists = playlists,
                                             onPlaylistClick = { activePlaylist = it },
@@ -716,7 +728,24 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
             tracks = tracksState.value,
             onDismiss = { playlistToMoreMenu = null },
             onExport = { viewModel.exportPlaylistAsM3U(playlistToMoreMenu!!, tracksState.value) },
-            onImport = { m3uImportLauncher.launch("*/*") },
+            onImport = { 
+                playlistToImportInto = playlistToMoreMenu
+                m3uImportLauncher.launch("*/*") 
+            },
+            lang = lang
+        )
+    }
+
+    if (importedM3uUri != null) {
+        M3UImportSelectionDialog(
+            uri = importedM3uUri!!,
+            playlists = playlists,
+            onDismiss = { importedM3uUri = null },
+            onImport = { playlistId ->
+                viewModel.importM3U(importedM3uUri!!, playlistId)
+                importedM3uUri = null
+            },
+            onCreatePlaylistClick = { showCreatePlaylistDialog = true },
             lang = lang
         )
     }
@@ -1707,7 +1736,7 @@ fun GlobalMoreActionDialog(
 @Composable
 fun PlaylistMoreActionDialog(
     playlist: Playlist,
-    tracks: List<AudioTrack>,
+    @Suppress("UNUSED_PARAMETER") tracks: List<AudioTrack>,
     onDismiss: () -> Unit,
     onExport: () -> Unit,
     onImport: () -> Unit,
@@ -2281,7 +2310,7 @@ fun NowPlayingScreen(
 }
 
 @Composable
-fun LibraryHeader(onCreateClick: () -> Unit) {
+fun LibraryHeader(onCreateClick: () -> Unit, onImportClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -2293,8 +2322,13 @@ fun LibraryHeader(onCreateClick: () -> Unit) {
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground
         )
-        IconButton(onClick = onCreateClick) {
-            Icon(Icons.Default.Add, contentDescription = "Create Playlist", tint = MaterialTheme.colorScheme.primary)
+        Row {
+            IconButton(onClick = onImportClick) {
+                Icon(Icons.Default.FileDownload, contentDescription = "Import Playlist", tint = MaterialTheme.colorScheme.primary)
+            }
+            IconButton(onClick = onCreateClick) {
+                Icon(Icons.Default.Add, contentDescription = "Create Playlist", tint = MaterialTheme.colorScheme.primary)
+            }
         }
     }
 }
@@ -3189,6 +3223,93 @@ fun LyricsOptionDialog(
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) { Text(Localization.getString("cancel", lang), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        },
+        containerColor = if (MaterialTheme.colorScheme.background == Color.White) Color.White else SpotifyDarkGrey
+    )
+}
+
+@Composable
+fun M3UImportSelectionDialog(
+    uri: Uri,
+    playlists: List<Playlist>,
+    onDismiss: () -> Unit,
+    onImport: (Long?) -> Unit,
+    onCreatePlaylistClick: () -> Unit,
+    lang: String
+) {
+    var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (lang == "ru") "Импорт плейлиста" else "Import Playlist") },
+        text = {
+            Column {
+                Text(
+                    text = if (lang == "ru") "Выберите плейлист для добавления или создайте новый (по умолчанию будет создан новый)" else "Select a playlist to add tracks to or create a new one (default is new)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedPlaylistId = null }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedPlaylistId == null,
+                                onClick = null,
+                                colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(text = if (lang == "ru") "Создать новый плейлист" else "Create new playlist", color = MaterialTheme.colorScheme.onBackground)
+                        }
+                    }
+                    
+                    items(playlists) { playlist ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedPlaylistId = playlist.id }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedPlaylistId == playlist.id,
+                                onClick = null,
+                                colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(text = playlist.name, color = MaterialTheme.colorScheme.onBackground)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedButton(
+                    onClick = onCreatePlaylistClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (lang == "ru") "Новый плейлист" else "New Playlist")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onImport(selectedPlaylistId) }) {
+                Text(if (lang == "ru") "ИМПОРТ" else "IMPORT", color = MaterialTheme.colorScheme.primary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(Localization.getString("cancel", lang).uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         },
         containerColor = if (MaterialTheme.colorScheme.background == Color.White) Color.White else SpotifyDarkGrey
     )

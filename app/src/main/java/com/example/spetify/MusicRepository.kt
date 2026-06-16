@@ -447,7 +447,9 @@ class MusicRepository(private val context: Context) {
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM,
             MediaStore.Audio.Media.DURATION,
-            MediaStore.Audio.Media.DATE_ADDED
+            MediaStore.Audio.Media.DATE_ADDED,
+            MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.DATA
         )
         
         val query = context.contentResolver.query(
@@ -465,7 +467,8 @@ class MusicRepository(private val context: Context) {
             val albumColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
             val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val dateColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
-            
+            val displayNameColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idColumn)
                 val metadata = playlistDao.getTrackMetadataSync(id)
@@ -481,9 +484,20 @@ class MusicRepository(private val context: Context) {
 
                 val duration = cursor.getLong(durationColumn)
                 val dateAdded = cursor.getLong(dateColumn) * 1000 // Convert to ms
+                val displayName = cursor.getString(displayNameColumn)
                 val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
                 
-                audioList.add(AudioTrack(id, title, artist, album, duration, contentUri, metadata?.customArtUri, dateAdded = dateAdded))
+                audioList.add(AudioTrack(
+                    id = id, 
+                    title = title, 
+                    artist = artist, 
+                    album = album, 
+                    duration = duration, 
+                    contentUri = contentUri, 
+                    customArtUri = metadata?.customArtUri, 
+                    fileName = displayName,
+                    dateAdded = dateAdded
+                ))
             }
         }
         return audioList

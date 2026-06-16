@@ -1585,7 +1585,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         }
     }
 
-    fun importM3U(uri: Uri) {
+    fun importM3U(uri: Uri, targetPlaylistId: Long? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val inputStream = context.contentResolver.openInputStream(uri) ?: return@launch
@@ -1593,29 +1593,60 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                 val lines = reader.readLines()
                 inputStream.close()
 
-                val playlistName = getFileName(uri)?.substringBeforeLast('.') ?: "Imported Playlist"
+                // 1. Get all tracks from MediaStore
+                val mediaStoreTracks: List<AudioTrack> = repository.fetchFromMediaStore()
                 
-                // Get all known tracks to match by filename or title
-                val allTracks = repository.fetchFromMediaStore()
+                // 2. Get all tracks from app's metadata (Directory scanner results)
+                val dbTracks: List<AudioTrack> = playlistDao.getAllTrackMetadataSync().map { meta ->
+                    AudioTrack(
+                        id = meta.trackId,
+                        title = meta.cachedTitle ?: "Unknown",
+                        artist = meta.cachedArtist ?: "Unknown",
+                        album = meta.cachedAlbum ?: "Single",
+                        duration = meta.cachedDuration ?: 0,
+                        contentUri = Uri.parse(meta.contentUriString ?: ""),
+                        customArtUri = meta.customArtUri,
+                        fileName = meta.contentUriString?.substringAfterLast('/')?.substringAfterLast(':'),
+                        dateAdded = meta.dateAdded ?: 0
+                    )
+                }
+
+                val allTracks: List<AudioTrack> = (mediaStoreTracks + dbTracks).distinctBy { it.id }
                 val importedTrackIds = mutableListOf<Long>()
 
                 lines.filter { it.isNotBlank() && !it.startsWith("#") }.forEach { line ->
-                    val fileNameInM3u = line.substringAfterLast(java.io.File.separatorChar).substringAfterLast('/')
-                    val matchedTrack = allTracks.find { 
-                        it.fileName == fileNameInM3u || 
-                        it.contentUri.toString() == line ||
-                        it.title.equals(fileNameInM3u.substringBeforeLast('.'), ignoreCase = true)
+                    // Normalize the line (path) from M3U
+                    val normalizedPath = line.replace('\\', '/')
+                    val fileNameInM3u = normalizedPath.substringAfterLast('/')
+                    val titleInM3u = fileNameInM3u.substringBeforeLast('.')
+                    
+                    val matchedTrack = allTracks.find { track ->
+                        // Try matching by Filename (most accurate for local files)
+                        val fileNameMatches = track.fileName?.equals(fileNameInM3u, ignoreCase = true) == true
+                        
+                        // Try matching by Title (fallback)
+                        val titleMatches = track.title.equals(titleInM3u, ignoreCase = true)
+                        
+                        // Try matching by URI
+                        val uriMatches = track.contentUri.toString().equals(line, ignoreCase = true)
+                        
+                        fileNameMatches || titleMatches || uriMatches
                     }
+
                     matchedTrack?.let { importedTrackIds.add(it.id) }
                 }
 
                 if (importedTrackIds.isNotEmpty()) {
-                    val playlistId = playlistDao.insertPlaylist(Playlist(name = playlistName))
+                    val playlistId = targetPlaylistId ?: playlistDao.insertPlaylist(
+                        Playlist(name = getFileName(uri)?.substringBeforeLast('.') ?: "Imported Playlist")
+                    )
+                    
                     importedTrackIds.forEachIndexed { index, trackId ->
                         playlistDao.addTrackToPlaylist(PlaylistTrack(playlistId, trackId, index))
                     }
+                    
                     withContext(Dispatchers.Main) {
-                        android.widget.Toast.makeText(context, "Imported ${importedTrackIds.size} tracks into '$playlistName'", android.widget.Toast.LENGTH_LONG).show()
+                        android.widget.Toast.makeText(context, "Imported ${importedTrackIds.size} tracks", android.widget.Toast.LENGTH_LONG).show()
                     }
                 } else {
                     withContext(Dispatchers.Main) {

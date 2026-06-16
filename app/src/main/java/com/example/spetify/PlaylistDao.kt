@@ -74,6 +74,9 @@ interface PlaylistDao {
     @Query("SELECT * FROM track_metadata")
     fun getAllTrackMetadata(): Flow<List<TrackMetadata>>
 
+    @Query("SELECT * FROM track_metadata")
+    suspend fun getAllTrackMetadataSync(): List<TrackMetadata>
+
     @Query("UPDATE track_metadata SET cachedLyrics = :lyrics, cachedSyncedLyrics = :syncedLyrics WHERE trackId = :trackId")
     suspend fun updateCachedLyrics(trackId: Long, lyrics: String?, syncedLyrics: String?)
 
