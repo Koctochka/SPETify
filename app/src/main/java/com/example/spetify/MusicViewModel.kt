@@ -233,6 +233,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         private const val KEY_LAST_ART = "last_art"
         private const val KEY_VOCAL_REMOVER_URI = "vocal_remover_uri"
         private const val KEY_VOCAL_REMOVER_NAME = "vocal_remover_name"
+        private const val KEY_LAST_QUEUE_NAME = "last_queue_name"
     }
 
     private val _shuffleMode = MutableStateFlow(false)
@@ -355,7 +356,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
 
     private var sleepTimerJob: kotlinx.coroutines.Job? = null
 
-    private val _currentQueueName = MutableStateFlow("Current Queue")
+    private val _currentQueueName = MutableStateFlow(sharedPrefs.getString(KEY_LAST_QUEUE_NAME, "Current Queue") ?: "Current Queue")
     val currentQueueName = _currentQueueName.asStateFlow()
 
     fun toggleQueueManager(show: Boolean) {
@@ -676,17 +677,58 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     fun deleteSavedQueue(queue: SavedQueue) {
         viewModelScope.launch(Dispatchers.IO) {
             playlistDao.deleteSavedQueue(queue)
+            if (_currentQueueName.value == queue.name) {
+                // If deleted queue was the current one, switch to first available or reset
+                val allQueues = playlistDao.getAllSavedQueuesSync()
+                val nextQueue = allQueues.firstOrNull { it.id != queue.id }
+                
+                withContext(Dispatchers.Main) {
+                    if (nextQueue != null) {
+                        loadSavedQueue(nextQueue)
+                    } else {
+                        _currentQueueName.value = "Current Queue"
+                        sharedPrefs.edit().putString(KEY_LAST_QUEUE_NAME, "Current Queue").apply()
+                        clearQueue()
+                    }
+                }
+            }
+        }
+    }
+
+    fun deleteCurrentQueue() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val name = _currentQueueName.value
+            if (name == "Current Queue") {
+                withContext(Dispatchers.Main) { clearQueue() }
+                return@launch
+            }
+            
+            val existing = playlistDao.getSavedQueueByName(name)
+            if (existing != null) {
+                deleteSavedQueue(existing)
+            } else {
+                withContext(Dispatchers.Main) {
+                    _currentQueueName.value = "Current Queue"
+                    sharedPrefs.edit().putString(KEY_LAST_QUEUE_NAME, "Current Queue").apply()
+                    clearQueue()
+                }
+            }
         }
     }
 
     fun renameSavedQueue(queue: SavedQueue, newName: String) {
         viewModelScope.launch(Dispatchers.IO) {
             playlistDao.updateSavedQueue(queue.copy(name = newName))
+            if (_currentQueueName.value == queue.name) {
+                _currentQueueName.value = newName
+                sharedPrefs.edit().putString(KEY_LAST_QUEUE_NAME, newName).apply()
+            }
         }
     }
 
     fun loadSavedQueue(queue: SavedQueue) {
         _currentQueueName.value = queue.name
+        sharedPrefs.edit().putString(KEY_LAST_QUEUE_NAME, queue.name).apply()
         viewModelScope.launch(Dispatchers.IO) {
             val trackIds = playlistDao.getQueueTrackIds(queue.id)
             val restoredTracks = trackIds.mapNotNull { id ->
@@ -715,6 +757,41 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         val chooser = Intent.createChooser(intent, "Share Queue Songs")
         chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(chooser)
+    }
+
+    fun exportQueueAsM3U(queue: List<AudioTrack>) {
+        if (queue.isEmpty()) return
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val m3uContent = StringBuilder("#EXTM3U\n")
+                queue.forEach { track ->
+                    m3uContent.append("#EXTINF:${track.duration / 1000},${track.artist} - ${track.title}\n")
+                    val path = repository.getRealPathFromSAF(track.contentUri) ?: track.contentUri.toString()
+                    m3uContent.append("$path\n")
+                }
+
+                val musicDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC)
+                val spetifyDir = java.io.File(musicDir, "SPETify")
+                val playlistDir = java.io.File(spetifyDir, "playlists")
+                playlistDir.mkdirs()
+
+                val cleanName = _currentQueueName.value.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                val file = java.io.File(playlistDir, "$cleanName.m3u")
+                
+                java.io.FileOutputStream(file).use { stream ->
+                    stream.write(m3uContent.toString().toByteArray())
+                }
+
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Playlist exported to Music/SPETify/playlists", android.widget.Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Failed to export: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     fun closeApp() {
@@ -1233,18 +1310,28 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         enrichmentJob?.cancel()
         enrichmentJob = viewModelScope.launch {
             try {
-                // 1. Immediate fast load
+                // 1. Immediate fast load (Current folder)
                 val fastContent = repository.fetchFromDocumentTreeFast(uri)
                 _directoryContent.value = fastContent
                 
-                // 2. Background enrichment
+                // 2. Recursive scan for counts and Play All (No full enrichment yet)
+                val (recursiveFolders, allRecursiveTracks) = repository.fetchAllTracksRecursive(uri)
+                
+                val contentWithRecursive = fastContent.copy(
+                    totalSubfoldersRecursive = recursiveFolders,
+                    totalTracksRecursive = allRecursiveTracks.size,
+                    allTracksRecursive = allRecursiveTracks
+                )
+                _directoryContent.value = contentWithRecursive
+
+                // 3. Background enrichment for immediate display
                 val enrichedTracks = coroutineScope {
                     fastContent.tracks.map { track ->
                         async { repository.enrichTrack(track) }
                     }.awaitAll()
                 }
                 
-                val finalContent = fastContent.copy(
+                val finalContent = contentWithRecursive.copy(
                     tracks = enrichedTracks,
                     totalDuration = enrichedTracks.sumOf { it.duration }
                 )
@@ -1368,7 +1455,19 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun clearQueue() {
+        mediaController?.stop()
         mediaController?.clearMediaItems()
+        _currentTrack.value = null
+        _currentPosition.value = 0
+        _isFavorite.value = false
+        sharedPrefs.edit().apply {
+            remove(KEY_LAST_TRACK_ID)
+            remove(KEY_LAST_TITLE)
+            remove(KEY_LAST_ARTIST)
+            remove(KEY_LAST_URI)
+            remove(KEY_LAST_ART)
+            putLong(KEY_LAST_POSITION, 0)
+        }.apply()
     }
 
     fun playAll(tracks: List<AudioTrack>, shuffle: Boolean = false, sourceName: String? = null) {
@@ -1379,6 +1478,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         // Auto-save to Saved Queues if a source name is provided
         sourceName?.let { name ->
             _currentQueueName.value = name
+            sharedPrefs.edit().putString(KEY_LAST_QUEUE_NAME, name).apply()
             viewModelScope.launch(Dispatchers.IO) {
                 val ids = listToPlay.map { it.id }
                 playlistDao.saveCurrentQueueAs(name, ids)
@@ -1448,6 +1548,85 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     fun deletePlaylist(playlist: Playlist) {
         viewModelScope.launch {
             playlistDao.deletePlaylist(playlist)
+        }
+    }
+
+    fun exportPlaylistAsM3U(playlist: Playlist, tracks: List<AudioTrack>) {
+        if (tracks.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val m3uContent = StringBuilder("#EXTM3U\n")
+                tracks.forEach { track ->
+                    m3uContent.append("#EXTINF:${track.duration / 1000},${track.artist} - ${track.title}\n")
+                    val path = repository.getRealPathFromSAF(track.contentUri) ?: track.contentUri.toString()
+                    m3uContent.append("$path\n")
+                }
+
+                val musicDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC)
+                val spetifyDir = java.io.File(musicDir, "SPETify")
+                val playlistDir = java.io.File(spetifyDir, "playlists")
+                playlistDir.mkdirs()
+
+                val cleanName = playlist.name.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                val file = java.io.File(playlistDir, "$cleanName.m3u")
+                
+                java.io.FileOutputStream(file).use { stream ->
+                    stream.write(m3uContent.toString().toByteArray())
+                }
+
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Playlist exported to Music/SPETify/playlists", android.widget.Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Failed to export: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    fun importM3U(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri) ?: return@launch
+                val reader = inputStream.bufferedReader()
+                val lines = reader.readLines()
+                inputStream.close()
+
+                val playlistName = getFileName(uri)?.substringBeforeLast('.') ?: "Imported Playlist"
+                val playlistId = playlistDao.insertPlaylist(Playlist(name = playlistName))
+
+                // Get all known tracks to match by filename or title
+                val allTracks = repository.fetchFromMediaStore()
+                val importedTrackIds = mutableListOf<Long>()
+
+                lines.filter { it.isNotBlank() && !it.startsWith("#") }.forEach { line ->
+                    val fileNameInM3u = line.substringAfterLast('/')
+                    val matchedTrack = allTracks.find { 
+                        it.fileName == fileNameInM3u || 
+                        it.contentUri.toString() == line ||
+                        it.title.equals(fileNameInM3u.substringBeforeLast('.'), ignoreCase = true)
+                    }
+                    matchedTrack?.let { importedTrackIds.add(it.id) }
+                }
+
+                if (importedTrackIds.isNotEmpty()) {
+                    importedTrackIds.forEachIndexed { index, trackId ->
+                        playlistDao.addTrackToPlaylist(PlaylistTrack(playlistId, trackId, index))
+                    }
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(context, "Imported ${importedTrackIds.size} tracks into '$playlistName'", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(context, "No matching tracks found in your library", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Import failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 

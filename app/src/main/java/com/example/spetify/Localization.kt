@@ -26,7 +26,10 @@ object Localization {
         "recently_added" to "Recently Added",
         "filename" to "Filename",
         "shuffle_all" to "Shuffle All",
+        "shuffle_and_play" to "Shuffle and Play",
         "share_songs" to "Share songs",
+        "export_m3u" to "Export as .M3U file",
+        "import_m3u" to "Import .M3U file",
         "save_album_art" to "Save Album Art",
         "edit_tags" to "Edit Tags",
         "song_info" to "Song Info",
@@ -54,7 +57,8 @@ object Localization {
         "off" to "Off",
         "min" to "min",
         "timer_set" to "Timer set for",
-        "timer_cancelled" to "Sleep timer cancelled"
+        "timer_cancelled" to "Sleep timer cancelled",
+        "no_track_selected" to "Select a track to play"
     )
 
     private val ru = mapOf(
@@ -82,7 +86,10 @@ object Localization {
         "recently_added" to "Недавно добавленные",
         "filename" to "Имя файла",
         "shuffle_all" to "Перемешать всё",
+        "shuffle_and_play" to "Перемешать и играть",
         "share_songs" to "Поделиться песнями",
+        "export_m3u" to "Экспорт в .M3U",
+        "import_m3u" to "Импорт .M3U",
         "save_album_art" to "Сохранить обложку",
         "edit_tags" to "Изменить теги",
         "song_info" to "Инфо о песне",
@@ -110,7 +117,8 @@ object Localization {
         "off" to "Выкл.",
         "min" to "мин",
         "timer_set" to "Таймер установлен на",
-        "timer_cancelled" to "Таймер сна отменен"
+        "timer_cancelled" to "Таймер сна отменен",
+        "no_track_selected" to "Выберите трек для проигрывания"
     )
 
     fun getString(key: String, lang: String): String {

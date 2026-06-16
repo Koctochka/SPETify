@@ -214,6 +214,7 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
     var trackToPlaylistMenu by remember { mutableStateOf<AudioTrack?>(null) }
     var trackIndexToRemoveFromQueue by remember { mutableStateOf<Int?>(null) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
+    var playlistToMoreMenu by remember { mutableStateOf<Playlist?>(null) }
     var trackToDeletePermanently by remember { mutableStateOf<AudioTrack?>(null) }
     val showQueueManager by viewModel.showQueueManager.collectAsState()
     val savedQueues by viewModel.savedQueues.collectAsState(initial = emptyList())
@@ -225,6 +226,7 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
     val showHelp by viewModel.showHelp.collectAsState()
 
     var showDirectoryMoreMenu by remember { mutableStateOf(false) }
+    var showTracksMoreMenu by remember { mutableStateOf(false) }
     var showQueueMoreMenu by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
 
@@ -242,6 +244,12 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
     ) { uri ->
         uri?.let { trackToMoreMenu?.let { track -> viewModel.setCustomArt(track.id, it) } }
         trackToMoreMenu = null
+    }
+
+    val m3uImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { viewModel.importM3U(it) }
     }
 
     if (pagerState.currentPage == 2) {
@@ -348,7 +356,8 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
                                     queueIndex = savedQueues.indexOfFirst { it.name == currentQueueName }.let { if (it != -1) it + 1 else null },
                                     lang = lang,
                                     autoScroll = autoScrollQueue,
-                                    isActivePage = pagerState.currentPage == 0
+                                    isActivePage = pagerState.currentPage == 0,
+                                    viewModel = viewModel
                                 )
                             }
                             1 -> { // Home (Now Playing)
@@ -381,6 +390,7 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
                                     },
                                     onSortClick = { viewModel.toggleSortDialog(true) },
                                     onFolderMoreClick = { showDirectoryMoreMenu = true },
+                                    onTracksMoreClick = { showTracksMoreMenu = true },
                                     lang = lang
                                 )
                             }
@@ -391,7 +401,8 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
                                         PlaylistList(
                                             playlists = playlists,
                                             onPlaylistClick = { activePlaylist = it },
-                                            onDeleteClick = { playlistToDelete = it }
+                                            onDeleteClick = { playlistToDelete = it },
+                                            onLongClick = { playlistToMoreMenu = it }
                                         )
                                     }
                                 } else {
@@ -537,6 +548,23 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
         DirectoryMoreActionDialog(
             onDismiss = { showDirectoryMoreMenu = false },
             onPlayAll = { 
+                viewModel.playAll(directoryContent.allTracksRecursive, sourceName = directoryContent.path.substringAfterLast(" > "))
+                coroutineScope.launch { pagerState.animateScrollToPage(1) }
+            },
+            onShuffleAll = { 
+                viewModel.playAll(directoryContent.allTracksRecursive, shuffle = true, sourceName = directoryContent.path.substringAfterLast(" > "))
+                coroutineScope.launch { pagerState.animateScrollToPage(1) }
+            },
+            subfolders = directoryContent.totalSubfoldersRecursive,
+            songs = directoryContent.totalTracksRecursive,
+            lang = lang
+        )
+    }
+
+    if (showTracksMoreMenu) {
+        DirectoryMoreActionDialog(
+            onDismiss = { showTracksMoreMenu = false },
+            onPlayAll = { 
                 viewModel.playAll(directoryContent.tracks, sourceName = directoryContent.path.substringAfterLast(" > "))
                 coroutineScope.launch { pagerState.animateScrollToPage(1) }
             },
@@ -544,6 +572,8 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
                 viewModel.playAll(directoryContent.tracks, shuffle = true, sourceName = directoryContent.path.substringAfterLast(" > "))
                 coroutineScope.launch { pagerState.animateScrollToPage(1) }
             },
+            subfolders = 0,
+            songs = directoryContent.tracks.size,
             lang = lang
         )
     }
@@ -552,6 +582,7 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
         QueueMoreActionDialog(
             onDismiss = { showQueueMoreMenu = false },
             onShareQueue = { viewModel.shareQueue(currentQueue) },
+            onExportM3U = { viewModel.exportQueueAsM3U(currentQueue) },
             lang = lang
         )
     }
@@ -674,6 +705,18 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
             viewModel = viewModel,
             onDismiss = { trackToPlaylistMenu = null },
             onCreatePlaylistClick = { showCreatePlaylistDialog = true },
+            lang = lang
+        )
+    }
+
+    if (playlistToMoreMenu != null) {
+        val tracksState = viewModel.getPlaylistTracks(playlistToMoreMenu!!.id).collectAsState(initial = emptyList())
+        PlaylistMoreActionDialog(
+            playlist = playlistToMoreMenu!!,
+            tracks = tracksState.value,
+            onDismiss = { playlistToMoreMenu = null },
+            onExport = { viewModel.exportPlaylistAsM3U(playlistToMoreMenu!!, tracksState.value) },
+            onImport = { m3uImportLauncher.launch("*/*") },
             lang = lang
         )
     }
@@ -907,7 +950,8 @@ fun QueueViewContent(
     queueIndex: Int?,
     lang: String,
     autoScroll: Boolean,
-    isActivePage: Boolean
+    isActivePage: Boolean,
+    viewModel: MusicViewModel
 ) {
     var draggedItemIndex by remember { mutableStateOf<Int?>(null) }
     var draggingOffset by remember { mutableFloatStateOf(0f) }
@@ -945,7 +989,7 @@ fun QueueViewContent(
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = onClearClick) {
+                IconButton(onClick = { viewModel.deleteCurrentQueue() }) {
                     Icon(Icons.Default.Close, contentDescription = Localization.getString("clear_queue", lang), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -1661,9 +1705,46 @@ fun GlobalMoreActionDialog(
 }
 
 @Composable
+fun PlaylistMoreActionDialog(
+    playlist: Playlist,
+    tracks: List<AudioTrack>,
+    onDismiss: () -> Unit,
+    onExport: () -> Unit,
+    onImport: () -> Unit,
+    lang: String
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(playlist.name, color = MaterialTheme.colorScheme.onBackground) },
+        text = {
+            Column {
+                ListItem(
+                    headlineContent = { Text(Localization.getString("export_m3u", lang), color = MaterialTheme.colorScheme.onBackground) },
+                    leadingContent = { Icon(Icons.Default.FileUpload, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    modifier = Modifier.clickable { onExport(); onDismiss() },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+                ListItem(
+                    headlineContent = { Text(Localization.getString("import_m3u", lang), color = MaterialTheme.colorScheme.onBackground) },
+                    leadingContent = { Icon(Icons.Default.FileDownload, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    modifier = Modifier.clickable { onImport(); onDismiss() },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(Localization.getString("cancel", lang), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        },
+        containerColor = if (MaterialTheme.colorScheme.background == Color.White) Color.White else SpotifyDarkGrey
+    )
+}
+
+@Composable
 fun QueueMoreActionDialog(
     onDismiss: () -> Unit,
     onShareQueue: () -> Unit,
+    onExportM3U: () -> Unit,
     lang: String
 ) {
     AlertDialog(
@@ -1675,6 +1756,11 @@ fun QueueMoreActionDialog(
                     headlineContent = { Text(Localization.getString("share_songs", lang)) },
                     leadingContent = { Icon(Icons.Default.Share, contentDescription = null) },
                     modifier = Modifier.clickable { onShareQueue(); onDismiss() }
+                )
+                ListItem(
+                    headlineContent = { Text(Localization.getString("export_m3u", lang)) },
+                    leadingContent = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null) },
+                    modifier = Modifier.clickable { onExportM3U(); onDismiss() }
                 )
             }
         },
@@ -1691,6 +1777,8 @@ fun DirectoryMoreActionDialog(
     onDismiss: () -> Unit,
     onPlayAll: () -> Unit,
     onShuffleAll: () -> Unit,
+    subfolders: Int,
+    songs: Int,
     lang: String
 ) {
     AlertDialog(
@@ -1698,13 +1786,20 @@ fun DirectoryMoreActionDialog(
         title = { Text(Localization.getString("folder_actions", lang)) },
         text = {
             Column {
+                Text(
+                    text = "${if (lang == "ru") "Вложено папок" else "Subfolders"}: $subfolders, " +
+                           "${if (lang == "ru") "всего песен" else "total songs"}: $songs",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SpotifyLightGrey,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
                 ListItem(
                     headlineContent = { Text(Localization.getString("play_all", lang)) },
                     leadingContent = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
                     modifier = Modifier.clickable { onPlayAll(); onDismiss() }
                 )
                 ListItem(
-                    headlineContent = { Text(Localization.getString("shuffle_all", lang)) },
+                    headlineContent = { Text(Localization.getString("shuffle_and_play", lang)) },
                     leadingContent = { Icon(Icons.Default.Shuffle, contentDescription = null) },
                     modifier = Modifier.clickable { onShuffleAll(); onDismiss() }
                 )
@@ -1728,6 +1823,7 @@ fun DirectoryExplorer(
     onMoreClick: (AudioTrack) -> Unit,
     onSortClick: () -> Unit,
     onFolderMoreClick: () -> Unit,
+    onTracksMoreClick: () -> Unit,
     lang: String
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -1760,18 +1856,26 @@ fun DirectoryExplorer(
             }
         }
 
-        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-            Text(
-                text = "Internal Storage > ${content.path}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "${content.folders.size} subfolders, ${content.tracks.size} songs  \u23F1 ${formatDuration(content.totalDuration)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Internal Storage > ${content.path}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "${content.totalSubfoldersRecursive} subfolders, ${content.totalTracksRecursive} songs  \u23F1 ${formatDuration(content.totalDuration)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onFolderMoreClick) {
+                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -1798,23 +1902,25 @@ fun DirectoryExplorer(
                 }
             }
 
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "${content.tracks.size} ${Localization.getString("songs", lang)} in this folder",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onSortClick) {
-                            Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = Localization.getString("sort_by", lang), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        IconButton(onClick = onFolderMoreClick) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (content.tracks.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${content.tracks.size} ${Localization.getString("songs", lang)} in this folder",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = onSortClick) {
+                                Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = Localization.getString("sort_by", lang), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            IconButton(onClick = onTracksMoreClick) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 }
@@ -2017,8 +2123,9 @@ fun NowPlayingScreen(
             }
 
             // Song Info
+            val lang by viewModel.appLanguage.collectAsState()
             Text(
-                text = track?.title ?: "Select a track",
+                text = track?.title ?: Localization.getString("no_track_selected", lang),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -2026,7 +2133,7 @@ fun NowPlayingScreen(
                 maxLines = 1
             )
             Text(
-                text = track?.artist ?: "Unknown Artist",
+                text = track?.artist ?: "",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -2041,25 +2148,27 @@ fun NowPlayingScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { track?.let { viewModel.toggleFavorite(it) } }) { 
+                IconButton(onClick = { track?.let { viewModel.toggleFavorite(it) } }, enabled = track != null) { 
                     Icon(
                         imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, 
                         contentDescription = "Favorite", 
-                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground 
+                        tint = if (track == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f) else if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground 
                     ) 
                 }
-                IconButton(onClick = { viewModel.showInfo(track) }) { Icon(Icons.Default.Info, contentDescription = "Info", tint = MaterialTheme.colorScheme.onBackground) }
-                IconButton(onClick = { if (track != null) onAddToPlaylistClick(track) }) {
-                    Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Add to Playlist", tint = MaterialTheme.colorScheme.onBackground)
+                IconButton(onClick = { viewModel.showInfo(track) }, enabled = track != null) { 
+                    Icon(Icons.Default.Info, contentDescription = "Info", tint = if (track == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f) else MaterialTheme.colorScheme.onBackground) 
                 }
-                IconButton(onClick = { viewModel.toggleLyrics() }) { 
+                IconButton(onClick = { if (track != null) onAddToPlaylistClick(track) }, enabled = track != null) {
+                    Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Add to Playlist", tint = if (track == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f) else MaterialTheme.colorScheme.onBackground)
+                }
+                IconButton(onClick = { viewModel.toggleLyrics() }, enabled = track != null) { 
                     Icon(
                         imageVector = Icons.Default.Lyrics,
                         contentDescription = "Karaoke", 
-                        tint = if (showLyrics) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground
+                        tint = if (track == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f) else if (showLyrics) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground
                     ) 
                 }
-                IconButton(onClick = { viewModel.toggleRepeatMode() }) { 
+                IconButton(onClick = { viewModel.toggleRepeatMode() }, enabled = track != null) { 
                     Icon(
                         imageVector = when(repeatMode) {
                             androidx.media3.common.Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
@@ -2067,11 +2176,11 @@ fun NowPlayingScreen(
                             else -> Icons.Default.Repeat
                         }, 
                         contentDescription = "Repeat", 
-                        tint = if (repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground 
+                        tint = if (track == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f) else if (repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground 
                     ) 
                 }
-                IconButton(onClick = { viewModel.toggleShuffleMode() }) { 
-                    Icon(Icons.Default.Shuffle, contentDescription = "Shuffle", tint = MaterialTheme.colorScheme.onBackground) 
+                IconButton(onClick = { viewModel.toggleShuffleMode() }, enabled = track != null) { 
+                    Icon(Icons.Default.Shuffle, contentDescription = "Shuffle", tint = if (track == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f) else MaterialTheme.colorScheme.onBackground) 
                 }
             }
 
@@ -2083,25 +2192,28 @@ fun NowPlayingScreen(
             var isDragging by remember { mutableStateOf(false) }
 
             // Sync slider with the actual playback position from ViewModel
-            LaunchedEffect(currentPosition) {
+            LaunchedEffect(currentPosition, track) {
                 if (!isDragging) {
-                    sliderPosition = currentPosition.toFloat()
+                    sliderPosition = if (track != null) currentPosition.toFloat() else 0f
                 }
             }
 
             Slider(
                 value = sliderPosition,
                 onValueChange = {
-                    isDragging = true
-                    sliderPosition = it
+                    if (track != null) {
+                        isDragging = true
+                        sliderPosition = it
+                    }
                 },
                 onValueChangeFinished = {
                     isDragging = false
                     viewModel.seekTo(sliderPosition.toLong())
                 },
                 valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
+                enabled = track != null,
                 colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.onBackground,
+                    thumbColor = if (track == null) Color.Transparent else MaterialTheme.colorScheme.onBackground,
                     activeTrackColor = MaterialTheme.colorScheme.onBackground,
                     inactiveTrackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f)
                 ),
@@ -2132,24 +2244,24 @@ fun NowPlayingScreen(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { viewModel.skipPrevious() }) {
-                        Icon(Icons.Default.SkipPrevious, contentDescription = null, tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(48.dp))
+                    IconButton(onClick = { viewModel.skipPrevious() }, enabled = track != null) {
+                        Icon(Icons.Default.SkipPrevious, contentDescription = null, tint = if (track == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f) else MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(48.dp))
                     }
-                    IconButton(onClick = { viewModel.togglePlayPause() }) {
+                    IconButton(onClick = { viewModel.togglePlayPause() }, enabled = track != null) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.PauseCircleFilled else Icons.Default.PlayCircleFilled,
                             contentDescription = if (isPlaying) "Pause" else "Play",
-                            tint = MaterialTheme.colorScheme.onBackground,
+                            tint = if (track == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f) else MaterialTheme.colorScheme.onBackground,
                             modifier = Modifier.size(72.dp)
                         )
                     }
-                    IconButton(onClick = { viewModel.skipNext() }) {
-                        Icon(Icons.Default.SkipNext, contentDescription = null, tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(48.dp))
+                    IconButton(onClick = { viewModel.skipNext() }, enabled = track != null) {
+                        Icon(Icons.Default.SkipNext, contentDescription = null, tint = if (track == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f) else MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(48.dp))
                     }
                 }
 
-                IconButton(onClick = { viewModel.openLyricsFull() }) { 
-                    Icon(Icons.Default.Description, contentDescription = "Full Lyrics", tint = MaterialTheme.colorScheme.onBackground) 
+                IconButton(onClick = { viewModel.openLyricsFull() }, enabled = track != null) { 
+                    Icon(Icons.Default.Description, contentDescription = "Full Lyrics", tint = if (track == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f) else MaterialTheme.colorScheme.onBackground)
                 }
             }
         }
@@ -2325,14 +2437,20 @@ fun TrackList(
 fun PlaylistList(
     playlists: List<Playlist>,
     onPlaylistClick: (Playlist) -> Unit,
-    onDeleteClick: (Playlist) -> Unit
+    onDeleteClick: (Playlist) -> Unit,
+    onLongClick: (Playlist) -> Unit
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         items(playlists, key = { it.id }) { playlist ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onPlaylistClick(playlist) }
+                    .pointerInput(playlist) {
+                        detectTapGestures(
+                            onTap = { onPlaylistClick(playlist) },
+                            onLongPress = { onLongClick(playlist) }
+                        )
+                    }
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {

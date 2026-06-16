@@ -22,7 +22,10 @@ data class DirectoryContent(
     val folders: List<Folder>,
     val tracks: List<AudioTrack>,
     val totalDuration: Long,
-    val path: String
+    val path: String,
+    val totalSubfoldersRecursive: Int = 0,
+    val totalTracksRecursive: Int = 0,
+    val allTracksRecursive: List<AudioTrack> = emptyList()
 )
 
 private data class CachedMetadata(
@@ -166,8 +169,26 @@ class MusicRepository(private val context: Context) {
             folders.sortedBy { it.name.lowercase() },
             tracks.sortedBy { it.title.lowercase() }, 
             0, 
-            path
+            path,
+            totalSubfoldersRecursive = folders.size, // Default to immediate for now, will be enriched
+            totalTracksRecursive = tracks.size,
+            allTracksRecursive = tracks
         )
+    }
+
+    suspend fun fetchAllTracksRecursive(directoryUri: Uri): Pair<Int, List<AudioTrack>> = withContext(Dispatchers.IO) {
+        val allTracks = mutableListOf<AudioTrack>()
+        val stack = mutableListOf(directoryUri)
+        var totalFolders = 0
+        
+        while (stack.isNotEmpty()) {
+            val currentUri = stack.removeAt(stack.size - 1)
+            val content = fetchFromDocumentTreeFast(currentUri)
+            allTracks.addAll(content.tracks)
+            totalFolders += content.folders.size
+            stack.addAll(content.folders.map { it.uri })
+        }
+        Pair(totalFolders, allTracks)
     }
 
     suspend fun scanDirectoryRecursive(directoryUri: Uri, onProgress: (List<AudioTrack>) -> Unit) = withContext(Dispatchers.IO) {
@@ -405,7 +426,7 @@ class MusicRepository(private val context: Context) {
         return CachedMetadata(title, artist, album, duration)
     }
 
-    private fun getRealPathFromSAF(uri: Uri): String? {
+    fun getRealPathFromSAF(uri: Uri): String? {
         return try {
             val docId = DocumentsContract.getDocumentId(uri)
             val split = docId.split(":")
@@ -417,7 +438,7 @@ class MusicRepository(private val context: Context) {
         }
     }
 
-    private    fun fetchFromMediaStore(): List<AudioTrack> {
+    fun fetchFromMediaStore(): List<AudioTrack> {
         val audioList = mutableListOf<AudioTrack>()
         val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(

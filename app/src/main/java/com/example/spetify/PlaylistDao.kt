@@ -83,6 +83,9 @@ interface PlaylistDao {
     @Query("SELECT * FROM saved_queues WHERE id != 0 ORDER BY position ASC")
     fun getAllSavedQueues(): Flow<List<SavedQueue>>
 
+    @Query("SELECT * FROM saved_queues WHERE id != 0 ORDER BY position ASC")
+    suspend fun getAllSavedQueuesSync(): List<SavedQueue>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSavedQueue(queue: SavedQueue): Long
 
@@ -104,6 +107,9 @@ interface PlaylistDao {
     @Query("SELECT * FROM saved_queues WHERE id = :id")
     suspend fun getSavedQueueById(id: Long): SavedQueue?
 
+    @Query("SELECT * FROM saved_queues WHERE name = :name LIMIT 1")
+    suspend fun getSavedQueueByName(name: String): SavedQueue?
+
     @Delete
     suspend fun deleteSavedQueue(queue: SavedQueue)
 
@@ -115,7 +121,14 @@ interface PlaylistDao {
 
     @Transaction
     suspend fun saveCurrentQueueAs(name: String, trackIds: List<Long>) {
-        val queueId = insertSavedQueue(SavedQueue(name = name))
+        val existing = getSavedQueueByName(name)
+        val queueId = if (existing != null) {
+            clearQueueTracks(existing.id)
+            existing.id
+        } else {
+            insertSavedQueue(SavedQueue(name = name))
+        }
+
         val tracks = trackIds.mapIndexed { index, trackId ->
             SavedQueueTrack(queueId, trackId, index)
         }
