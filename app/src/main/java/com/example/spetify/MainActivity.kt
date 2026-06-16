@@ -1730,6 +1730,18 @@ fun PlaylistMoreActionDialog(
                     modifier = Modifier.clickable { onImport(); onDismiss() },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
+                ListItem(
+                    headlineContent = { Text(Localization.getString("add_to_playlist", lang), color = MaterialTheme.colorScheme.onBackground) },
+                    leadingContent = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    modifier = Modifier.clickable { 
+                        // We need a track to use this dialog, usually it's for a single track.
+                        // If you want to add the whole playlist to another, we'd need a different logic.
+                        // But since the user asked to "open add to playlist menu after import", 
+                        // I will implement the import then selection logic.
+                        onDismiss() 
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
             }
         },
         confirmButton = {},

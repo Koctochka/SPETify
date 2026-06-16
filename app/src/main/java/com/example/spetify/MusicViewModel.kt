@@ -1594,14 +1594,13 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                 inputStream.close()
 
                 val playlistName = getFileName(uri)?.substringBeforeLast('.') ?: "Imported Playlist"
-                val playlistId = playlistDao.insertPlaylist(Playlist(name = playlistName))
-
+                
                 // Get all known tracks to match by filename or title
                 val allTracks = repository.fetchFromMediaStore()
                 val importedTrackIds = mutableListOf<Long>()
 
                 lines.filter { it.isNotBlank() && !it.startsWith("#") }.forEach { line ->
-                    val fileNameInM3u = line.substringAfterLast('/')
+                    val fileNameInM3u = line.substringAfterLast(java.io.File.separatorChar).substringAfterLast('/')
                     val matchedTrack = allTracks.find { 
                         it.fileName == fileNameInM3u || 
                         it.contentUri.toString() == line ||
@@ -1611,6 +1610,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                 }
 
                 if (importedTrackIds.isNotEmpty()) {
+                    val playlistId = playlistDao.insertPlaylist(Playlist(name = playlistName))
                     importedTrackIds.forEachIndexed { index, trackId ->
                         playlistDao.addTrackToPlaylist(PlaylistTrack(playlistId, trackId, index))
                     }
@@ -1619,7 +1619,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                     }
                 } else {
                     withContext(Dispatchers.Main) {
-                        android.widget.Toast.makeText(context, "No matching tracks found in your library", android.widget.Toast.LENGTH_LONG).show()
+                        android.widget.Toast.makeText(context, "No matching tracks found in your library. Ensure tracks are scanned first.", android.widget.Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (e: Exception) {
