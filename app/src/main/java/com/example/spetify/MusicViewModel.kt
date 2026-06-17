@@ -662,6 +662,17 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         }
     }
 
+    fun scanSongs() {
+        val uriStr = sharedPrefs.getString("directory_uri", null)
+        if (uriStr != null) {
+            val uri = Uri.parse(uriStr)
+            android.widget.Toast.makeText(context, "Scanning songs...", android.widget.Toast.LENGTH_SHORT).show()
+            startFullScan(uri)
+        } else {
+            android.widget.Toast.makeText(context, "No directory selected to scan", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
 
     fun moveSavedQueue(fromIndex: Int, toIndex: Int) {
         viewModelScope.launch(Dispatchers.IO) {

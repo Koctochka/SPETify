@@ -495,6 +495,7 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
             onHelpInfo = { viewModel.toggleHelp(true) },
             onSleepTimer = { showSleepTimerDialog = true },
             onVocalRemover = { viewModel.toggleVocalRemoverScreen(true) },
+            onScanSongs = { viewModel.scanSongs() },
             onCloseApp = { viewModel.closeApp() },
             lang = lang
         )
@@ -1694,6 +1695,7 @@ fun GlobalMoreActionDialog(
     onHelpInfo: () -> Unit,
     onSleepTimer: () -> Unit,
     onVocalRemover: () -> Unit,
+    onScanSongs: () -> Unit,
     onCloseApp: () -> Unit,
     lang: String
 ) {
@@ -1724,6 +1726,12 @@ fun GlobalMoreActionDialog(
                     headlineContent = { Text(Localization.getString("vocal_remover", lang), color = MaterialTheme.colorScheme.onBackground) },
                     leadingContent = { Icon(Icons.Default.MicExternalOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                     modifier = Modifier.clickable { onVocalRemover(); onDismiss() },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+                ListItem(
+                    headlineContent = { Text(Localization.getString("scan_songs", lang), color = MaterialTheme.colorScheme.onBackground) },
+                    leadingContent = { Icon(Icons.Default.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    modifier = Modifier.clickable { onScanSongs(); onDismiss() },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
