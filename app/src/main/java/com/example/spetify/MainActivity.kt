@@ -433,7 +433,9 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
                                             trackToMoreMenu = track
                                             trackIndexToRemoveFromQueue = null
                                         },
-                                        onMove = { from, to -> viewModel.moveTrackInPlaylist(activePlaylist!!.id, from, to) }
+                                        onMove = { from, to -> viewModel.moveTrackInPlaylist(activePlaylist!!.id, from, to) },
+                                        onPlaylistMoreClick = { playlistToMoreMenu = activePlaylist },
+                                        lang = lang
                                     )
                                 }
                             }
@@ -731,6 +733,14 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
             onImport = { 
                 playlistToImportInto = playlistToMoreMenu
                 m3uImportLauncher.launch("*/*") 
+            },
+            onPlayAll = {
+                viewModel.playAll(tracksState.value, sourceName = playlistToMoreMenu!!.name)
+                coroutineScope.launch { pagerState.animateScrollToPage(1) }
+            },
+            onShuffleAll = {
+                viewModel.playAll(tracksState.value, shuffle = true, sourceName = playlistToMoreMenu!!.name)
+                coroutineScope.launch { pagerState.animateScrollToPage(1) }
             },
             lang = lang
         )
@@ -1736,10 +1746,12 @@ fun GlobalMoreActionDialog(
 @Composable
 fun PlaylistMoreActionDialog(
     playlist: Playlist,
-    @Suppress("UNUSED_PARAMETER") tracks: List<AudioTrack>,
+    tracks: List<AudioTrack>,
     onDismiss: () -> Unit,
     onExport: () -> Unit,
     onImport: () -> Unit,
+    onPlayAll: () -> Unit,
+    onShuffleAll: () -> Unit,
     lang: String
 ) {
     AlertDialog(
@@ -1747,6 +1759,19 @@ fun PlaylistMoreActionDialog(
         title = { Text(playlist.name, color = MaterialTheme.colorScheme.onBackground) },
         text = {
             Column {
+                ListItem(
+                    headlineContent = { Text(Localization.getString("play_all", lang), color = MaterialTheme.colorScheme.onBackground) },
+                    leadingContent = { Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    modifier = Modifier.clickable { onPlayAll(); onDismiss() },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+                ListItem(
+                    headlineContent = { Text(Localization.getString("shuffle_and_play", lang), color = MaterialTheme.colorScheme.onBackground) },
+                    leadingContent = { Icon(Icons.Default.Shuffle, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    modifier = Modifier.clickable { onShuffleAll(); onDismiss() },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
                 ListItem(
                     headlineContent = { Text(Localization.getString("export_m3u", lang), color = MaterialTheme.colorScheme.onBackground) },
                     leadingContent = { Icon(Icons.Default.FileUpload, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
@@ -1757,18 +1782,6 @@ fun PlaylistMoreActionDialog(
                     headlineContent = { Text(Localization.getString("import_m3u", lang), color = MaterialTheme.colorScheme.onBackground) },
                     leadingContent = { Icon(Icons.Default.FileDownload, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                     modifier = Modifier.clickable { onImport(); onDismiss() },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
-                ListItem(
-                    headlineContent = { Text(Localization.getString("add_to_playlist", lang), color = MaterialTheme.colorScheme.onBackground) },
-                    leadingContent = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    modifier = Modifier.clickable { 
-                        // We need a track to use this dialog, usually it's for a single track.
-                        // If you want to add the whole playlist to another, we'd need a different logic.
-                        // But since the user asked to "open add to playlist menu after import", 
-                        // I will implement the import then selection logic.
-                        onDismiss() 
-                    },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
@@ -2528,17 +2541,37 @@ fun PlaylistDetailView(
     onBackClick: () -> Unit,
     onTrackClick: (AudioTrack) -> Unit,
     onMoreClick: (AudioTrack) -> Unit,
-    onMove: (Int, Int) -> Unit
+    onMove: (Int, Int) -> Unit,
+    onPlaylistMoreClick: () -> Unit,
+    lang: String
 ) {
+    val totalDuration = tracks.sumOf { it.duration }
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBackClick) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
             }
-            Text(text = playlist.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = playlist.name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${tracks.size} ${Localization.getString("songs", lang)} • ${formatDuration(totalDuration)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onPlaylistMoreClick) {
+                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         TrackList(tracks = tracks, onTrackClick = onTrackClick, onMoreClick = onMoreClick, onMove = onMove)
     }
