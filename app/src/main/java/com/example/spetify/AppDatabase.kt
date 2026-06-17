@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [Playlist::class, PlaylistTrack::class, SavedQueue::class, SavedQueueTrack::class, TrackMetadata::class], version = 10)
+@Database(entities = [Playlist::class, PlaylistTrack::class, SavedQueue::class, SavedQueueTrack::class, TrackMetadata::class], version = 12)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun playlistDao(): PlaylistDao
 

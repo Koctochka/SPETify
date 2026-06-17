@@ -67,6 +67,11 @@ class MusicRepository(private val context: Context) {
         }
     }
 
+    private fun generateStableId(uri: Uri, path: String?, name: String?): Long {
+        // Prefer real file path for ID generation to unify MediaStore and SAF tracks
+        return (path ?: uri.toString()).hashCode().toLong()
+    }
+
     /**
      * Extremely fast directory scan that only returns names and basic info.
      * Metadata extraction should be handled separately or lazily.
@@ -114,7 +119,10 @@ class MusicRepository(private val context: Context) {
                     if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                         folders.add(Folder(name ?: "Unknown Folder", childUri))
                     } else if (isAudioMime(mime) || isAudioExtension(name)) {
-                        val id = childUri.toString().hashCode().toLong()
+                        // Crucial: try to get a path-based ID to match MediaStore
+                        val realPath = getRealPathFromSAF(childUri)
+                        val id = generateStableId(childUri, realPath, name)
+
                         tracks.add(AudioTrack(
                             id = id,
                             title = name?.substringBeforeLast('.') ?: "Unknown",
@@ -472,7 +480,11 @@ class MusicRepository(private val context: Context) {
             val displayNameColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
 
             while (cursor.moveToNext()) {
-                val id = cursor.getLong(idColumn)
+                val mediaStoreId = cursor.getLong(idColumn)
+                val path = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA))
+                val id = generateStableId(Uri.EMPTY, path, null)
+                
+                // Use our stable ID as the key for metadata
                 val metadata = playlistDao.getTrackMetadataSync(id)
                 
                 val title = cursor.getString(titleColumn)?.takeIf { it.isNotBlank() && !it.contains("unknown", ignoreCase = true) } 
