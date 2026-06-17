@@ -62,6 +62,7 @@ data class TrackMetadata(
     val cachedAlbum: String? = null,
     val cachedDuration: Long? = null,
     val contentUriString: String? = null,
+    val fileName: String? = null,
     val isFavorite: Boolean = false,
     val cachedLyrics: String? = null,
     val cachedSyncedLyrics: String? = null,

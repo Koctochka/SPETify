@@ -208,6 +208,7 @@ class MusicRepository(private val context: Context) {
                             cachedTitle = track.title,
                             cachedArtist = "Loading...",
                             contentUriString = track.contentUri.toString(),
+                            fileName = track.fileName,
                             dateAdded = track.dateAdded
                         ))
                     }
@@ -267,6 +268,7 @@ class MusicRepository(private val context: Context) {
             cachedAlbum = extracted.album,
             cachedDuration = extracted.duration,
             contentUriString = uriString,
+            fileName = track.fileName,
             dateAdded = roomMetadata?.dateAdded ?: track.dateAdded
         ))
 

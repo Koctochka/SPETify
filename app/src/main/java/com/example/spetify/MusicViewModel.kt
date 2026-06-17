@@ -1598,15 +1598,16 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                 
                 // 2. Get all tracks from app's metadata (Directory scanner results)
                 val dbTracks: List<AudioTrack> = playlistDao.getAllTrackMetadataSync().map { meta ->
+                    val uri = Uri.parse(meta.contentUriString ?: "")
                     AudioTrack(
                         id = meta.trackId,
                         title = meta.cachedTitle ?: "Unknown",
                         artist = meta.cachedArtist ?: "Unknown",
                         album = meta.cachedAlbum ?: "Single",
                         duration = meta.cachedDuration ?: 0,
-                        contentUri = Uri.parse(meta.contentUriString ?: ""),
+                        contentUri = uri,
                         customArtUri = meta.customArtUri,
-                        fileName = meta.contentUriString?.substringAfterLast('/')?.substringAfterLast(':'),
+                        fileName = meta.fileName ?: meta.contentUriString?.substringAfterLast('/')?.substringAfterLast(':'),
                         dateAdded = meta.dateAdded ?: 0
                     )
                 }
@@ -1616,33 +1617,69 @@ class MusicViewModel(private val context: Context) : ViewModel() {
 
                 lines.filter { it.isNotBlank() && !it.startsWith("#") }.forEach { line ->
                     // Normalize the line (path) from M3U
-                    val normalizedPath = line.replace('\\', '/')
+                    val normalizedPath = line.trim().replace('\\', '/')
                     val fileNameInM3u = normalizedPath.substringAfterLast('/')
                     val titleInM3u = fileNameInM3u.substringBeforeLast('.')
                     
                     val matchedTrack = allTracks.find { track ->
-                        // Try matching by Filename (most accurate for local files)
+                        // 1. Try matching by Filename (most accurate)
                         val fileNameMatches = track.fileName?.equals(fileNameInM3u, ignoreCase = true) == true
                         
-                        // Try matching by Title (fallback)
+                        // 2. Try matching by Title (fallback)
                         val titleMatches = track.title.equals(titleInM3u, ignoreCase = true)
                         
-                        // Try matching by URI
-                        val uriMatches = track.contentUri.toString().equals(line, ignoreCase = true)
+                        // 3. Try matching by Title (exact match of line)
+                        val fullLineMatches = track.title.equals(line.trim(), ignoreCase = true)
                         
-                        fileNameMatches || titleMatches || uriMatches
-                    }
+                        // 4. Try matching by URI
+                        val uriMatches = track.contentUri.toString().equals(line.trim(), ignoreCase = true)
 
-                    matchedTrack?.let { importedTrackIds.add(it.id) }
+                        // 5. Try matching by Artist - Title in the line
+                        val infoMatches = if (line.contains(" - ")) {
+                            val parts = line.split(" - ")
+                            val artistPart = parts[0].substringAfterLast('/').substringAfterLast('\\').trim()
+                            val titlePart = parts[1].substringBeforeLast('.').trim()
+                            track.artist.equals(artistPart, ignoreCase = true) && 
+                            track.title.equals(titlePart, ignoreCase = true)
+                        } else false
+                        
+                        fileNameMatches || titleMatches || fullLineMatches || uriMatches || infoMatches
+                    }
+                    
+                    if (matchedTrack != null) {
+                        importedTrackIds.add(matchedTrack.id)
+                        
+                        // IMPORTANT: Always ensure metadata exists and contains a URI
+                        // so getTrackFromCache can reconstruct it later.
+                        val existingMeta = playlistDao.getTrackMetadataSync(matchedTrack.id)
+                        if (existingMeta == null || existingMeta.contentUriString == null) {
+                            playlistDao.updateTrackMetadata(TrackMetadata(
+                                trackId = matchedTrack.id,
+                                cachedTitle = matchedTrack.title,
+                                cachedArtist = matchedTrack.artist,
+                                cachedAlbum = matchedTrack.album,
+                                cachedDuration = matchedTrack.duration,
+                                contentUriString = matchedTrack.contentUri.toString(),
+                                fileName = matchedTrack.fileName ?: fileNameInM3u,
+                                dateAdded = matchedTrack.dateAdded
+                            ))
+                        }
+                    } else {
+                        android.util.Log.d("MusicViewModel", "Failed to match M3U track line: '$line' (Filename: '$fileNameInM3u', Title: '$titleInM3u')")
+                    }
                 }
 
                 if (importedTrackIds.isNotEmpty()) {
+                    val startPosition = if (targetPlaylistId != null) {
+                        playlistDao.getTrackCountInPlaylist(targetPlaylistId)
+                    } else 0
+
                     val playlistId = targetPlaylistId ?: playlistDao.insertPlaylist(
                         Playlist(name = getFileName(uri)?.substringBeforeLast('.') ?: "Imported Playlist")
                     )
                     
                     importedTrackIds.forEachIndexed { index, trackId ->
-                        playlistDao.addTrackToPlaylist(PlaylistTrack(playlistId, trackId, index))
+                        playlistDao.addTrackToPlaylist(PlaylistTrack(playlistId, trackId, startPosition + index))
                     }
                     
                     withContext(Dispatchers.Main) {
