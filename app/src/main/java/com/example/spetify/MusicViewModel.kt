@@ -234,6 +234,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         private const val KEY_VOCAL_REMOVER_URI = "vocal_remover_uri"
         private const val KEY_VOCAL_REMOVER_NAME = "vocal_remover_name"
         private const val KEY_LAST_QUEUE_NAME = "last_queue_name"
+        private const val KEY_LAST_QUEUE_ID = "last_queue_id"
     }
 
     private val _shuffleMode = MutableStateFlow(false)
@@ -358,6 +359,8 @@ class MusicViewModel(private val context: Context) : ViewModel() {
 
     private val _currentQueueName = MutableStateFlow(sharedPrefs.getString(KEY_LAST_QUEUE_NAME, "Current Queue") ?: "Current Queue")
     val currentQueueName = _currentQueueName.asStateFlow()
+
+    private val _currentQueueId = MutableStateFlow<Long?>(sharedPrefs.getLong(KEY_LAST_QUEUE_ID, -1L).let { if (it == -1L) null else it })
 
     fun toggleQueueManager(show: Boolean) {
         _showQueueManager.value = show
@@ -688,16 +691,17 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     fun deleteSavedQueue(queue: SavedQueue) {
         viewModelScope.launch(Dispatchers.IO) {
             playlistDao.deleteSavedQueue(queue)
-            if (_currentQueueName.value == queue.name) {
+            if (_currentQueueId.value == queue.id) {
                 // If deleted queue was the current one, switch to first available or reset
                 val allQueues = playlistDao.getAllSavedQueuesSync()
-                val nextQueue = allQueues.firstOrNull { it.id != queue.id }
+                val nextQueue = allQueues.firstOrNull()
                 
                 withContext(Dispatchers.Main) {
                     if (nextQueue != null) {
                         loadSavedQueue(nextQueue)
                     } else {
                         _currentQueueName.value = "Current Queue"
+                        _currentQueueId.value = null
                         sharedPrefs.edit().putString(KEY_LAST_QUEUE_NAME, "Current Queue").apply()
                         clearQueue()
                     }
@@ -739,15 +743,25 @@ class MusicViewModel(private val context: Context) : ViewModel() {
 
     fun loadSavedQueue(queue: SavedQueue) {
         _currentQueueName.value = queue.name
-        sharedPrefs.edit().putString(KEY_LAST_QUEUE_NAME, queue.name).apply()
+        _currentQueueId.value = queue.id
+        sharedPrefs.edit().apply {
+            putString(KEY_LAST_QUEUE_NAME, queue.name)
+            putLong(KEY_LAST_QUEUE_ID, queue.id)
+        }.apply()
+        
         viewModelScope.launch(Dispatchers.IO) {
             val trackIds = playlistDao.getQueueTrackIds(queue.id)
             val restoredTracks = trackIds.mapNotNull { id ->
                 _tracks.value.find { it.id == id } ?: repository.getTrackFromCache(id)
             }
+            
             withContext(Dispatchers.Main) {
                 if (restoredTracks.isNotEmpty()) {
-                    playAll(restoredTracks)
+                    // Start playback and seek to last saved position
+                    playAll(restoredTracks, initialTrackId = queue.lastTrackId)
+                    if (queue.lastPosition > 0) {
+                        mediaController?.seekTo(queue.lastPosition)
+                    }
                 }
             }
         }
@@ -1134,10 +1148,11 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                 } else {
                     val controller = mediaController
                     if (controller != null && controller.isPlaying) {
-                        _currentPosition.value = controller.currentPosition
+                        val currentPos = controller.currentPosition
+                        _currentPosition.value = currentPos
                         
                         // Save current position periodically
-                        sharedPrefs.edit().putLong(KEY_LAST_POSITION, controller.currentPosition).apply()
+                        sharedPrefs.edit().putLong(KEY_LAST_POSITION, currentPos).apply()
 
                         // Save metadata periodically to ensure "Instant UI" on next boot is accurate
                         _currentTrack.value?.let { track ->
@@ -1147,6 +1162,11 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                                 putString(KEY_LAST_URI, track.contentUri.toString())
                                 putString(KEY_LAST_ART, track.customArtUri)
                             }.apply()
+
+                            // NEW: Save state to current saved queue if applicable
+                            _currentQueueId.value?.let { queueId ->
+                                playlistDao.updateQueueLastState(queueId, track.id, currentPos)
+                            }
                         }
 
                         // Also update duration if it's currently 0
@@ -1471,7 +1491,9 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         _currentTrack.value = null
         _currentPosition.value = 0
         _isFavorite.value = false
+        _currentQueueId.value = null
         sharedPrefs.edit().apply {
+            remove(KEY_LAST_QUEUE_ID)
             remove(KEY_LAST_TRACK_ID)
             remove(KEY_LAST_TITLE)
             remove(KEY_LAST_ARTIST)
@@ -1481,7 +1503,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         }.apply()
     }
 
-    fun playAll(tracks: List<AudioTrack>, shuffle: Boolean = false, sourceName: String? = null) {
+    fun playAll(tracks: List<AudioTrack>, shuffle: Boolean = false, sourceName: String? = null, initialTrackId: Long? = null) {
         if (tracks.isEmpty()) return
         
         val listToPlay = if (shuffle) tracks.shuffled() else tracks
@@ -1492,7 +1514,9 @@ class MusicViewModel(private val context: Context) : ViewModel() {
             sharedPrefs.edit().putString(KEY_LAST_QUEUE_NAME, name).apply()
             viewModelScope.launch(Dispatchers.IO) {
                 val ids = listToPlay.map { it.id }
-                playlistDao.saveCurrentQueueAs(name, ids)
+                val id = playlistDao.saveCurrentQueueAs(name, ids)
+                _currentQueueId.value = id
+                sharedPrefs.edit().putLong(KEY_LAST_QUEUE_ID, id).apply()
             }
         }
 
@@ -1509,9 +1533,17 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                         .build()
                 }
                 controller.setMediaItems(mediaItems)
+                
+                // Find index of the initial track or default to 0
+                val startIndex = if (initialTrackId != null) {
+                    val idx = listToPlay.indexOfFirst { it.id == initialTrackId }
+                    if (idx != -1) idx else 0
+                } else 0
+                
+                controller.seekTo(startIndex, 0)
                 controller.prepare()
                 controller.play()
-                _currentTrack.value = listToPlay.first()
+                _currentTrack.value = listToPlay[startIndex]
             } catch (e: Exception) {
                 android.util.Log.e("MusicViewModel", "Failed to play all", e)
             }
@@ -1855,10 +1887,14 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun toggleLyrics() {
-        if (_syncedLyrics.value.isEmpty() && _plainLyrics.value == null) {
-            _showLyricsSearchMenu.value = LyricsMenuType.KARAOKE
+        if (_showLyrics.value) {
+            _showLyrics.value = false
         } else {
-            _showLyrics.value = !_showLyrics.value
+            if (_syncedLyrics.value.isEmpty() && _plainLyrics.value == null) {
+                _showLyricsSearchMenu.value = LyricsMenuType.KARAOKE
+            } else {
+                _showLyrics.value = true
+            }
         }
     }
 

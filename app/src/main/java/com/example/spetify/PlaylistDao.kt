@@ -123,7 +123,7 @@ interface PlaylistDao {
     suspend fun insertQueueTracks(tracks: List<SavedQueueTrack>)
 
     @Transaction
-    suspend fun saveCurrentQueueAs(name: String, trackIds: List<Long>) {
+    suspend fun saveCurrentQueueAs(name: String, trackIds: List<Long>): Long {
         val existing = getSavedQueueByName(name)
         val queueId = if (existing != null) {
             clearQueueTracks(existing.id)
@@ -136,7 +136,11 @@ interface PlaylistDao {
             SavedQueueTrack(queueId, trackId, index)
         }
         insertQueueTracks(tracks)
+        return queueId
     }
+
+    @Query("UPDATE saved_queues SET lastTrackId = :trackId, lastPosition = :position WHERE id = :queueId")
+    suspend fun updateQueueLastState(queueId: Long, trackId: Long?, position: Long)
 
     @Query("SELECT trackId FROM saved_queue_tracks WHERE queueId = :queueId ORDER BY position ASC")
     suspend fun getQueueTrackIds(queueId: Long): List<Long>

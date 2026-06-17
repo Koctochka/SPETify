@@ -31,7 +31,9 @@ data class PlaylistWithTracks(
 data class SavedQueue(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
-    val position: Int = 0
+    val position: Int = 0,
+    val lastTrackId: Long? = null,
+    val lastPosition: Long = 0
 )
 
 @Entity(
