@@ -201,14 +201,14 @@ class MusicRepository(private val context: Context) {
 
     suspend fun scanDirectoryRecursive(directoryUri: Uri, onProgress: (List<AudioTrack>) -> Unit) = withContext(Dispatchers.IO) {
         val stack = mutableListOf(directoryUri)
-        val allTracks = mutableListOf<AudioTrack>()
-
+        
         while (stack.isNotEmpty()) {
+            ensureActive() // Check for cancellation
             val currentUri = stack.removeAt(stack.size - 1)
             val content = fetchFromDocumentTreeFast(currentUri)
             
             if (content.tracks.isNotEmpty()) {
-                // Quick save basic info to DB so they appear in search immediately
+                // Batch save basic info to DB to reduce transaction overhead
                 content.tracks.forEach { track ->
                     if (playlistDao.getTrackMetadataSync(track.id) == null) {
                         playlistDao.updateTrackMetadata(TrackMetadata(
@@ -221,13 +221,14 @@ class MusicRepository(private val context: Context) {
                         ))
                     }
                 }
-
-                val enriched = content.tracks.map { enrichTrack(it) }
-                allTracks.addAll(enriched)
-                onProgress(enriched)
+                onProgress(content.tracks)
+                
+                // Crucial: Give up CPU time to prevent system from killing the app
+                delay(100) 
             }
             
             stack.addAll(content.folders.map { it.uri })
+            yield()
         }
     }
 

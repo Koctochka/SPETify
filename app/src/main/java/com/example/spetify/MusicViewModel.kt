@@ -1341,39 +1341,48 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         enrichmentJob?.cancel()
         enrichmentJob = viewModelScope.launch {
             try {
-                // 1. Immediate fast load (Current folder)
+                // 1. Immediate fast load (Only Current folder)
                 val fastContent = repository.fetchFromDocumentTreeFast(uri)
                 _directoryContent.value = fastContent
                 
-                // 2. Recursive scan for counts and Play All (No full enrichment yet)
-                val (recursiveFolders, allRecursiveTracks) = repository.fetchAllTracksRecursive(uri)
-                
-                val contentWithRecursive = fastContent.copy(
-                    totalSubfoldersRecursive = recursiveFolders,
-                    totalTracksRecursive = allRecursiveTracks.size,
-                    allTracksRecursive = allRecursiveTracks
-                )
-                _directoryContent.value = contentWithRecursive
-
-                // 3. Background enrichment for immediate display
-                val enrichedTracks = coroutineScope {
+                // 2. Controlled enrichment for CURRENT folder only
+                val enrichedTracks = withContext(Dispatchers.Default) {
+                    // Limit concurrency to 3 simultaneous metadata extractions
+                    val semaphore = kotlinx.coroutines.sync.Semaphore(3)
                     fastContent.tracks.map { track ->
-                        async { repository.enrichTrack(track) }
+                        async {
+                            semaphore.acquire()
+                            try {
+                                repository.enrichTrack(track)
+                            } finally {
+                                semaphore.release()
+                            }
+                        }
                     }.awaitAll()
                 }
                 
-                val finalContent = contentWithRecursive.copy(
+                val updatedContent = fastContent.copy(
                     tracks = enrichedTracks,
                     totalDuration = enrichedTracks.sumOf { it.duration }
                 )
-                _directoryContent.value = finalContent
+                _directoryContent.value = updatedContent
+
+                // 3. Defer recursive scan (low priority)
+                launch(Dispatchers.IO) {
+                    delay(1000) // Wait for UI to settle
+                    val (recursiveFolders, allRecursiveTracks) = repository.fetchAllTracksRecursive(uri)
+                    _directoryContent.value = _directoryContent.value.copy(
+                        totalSubfoldersRecursive = recursiveFolders,
+                        totalTracksRecursive = allRecursiveTracks.size,
+                        allTracksRecursive = allRecursiveTracks
+                    )
+                }
                 
-                // Update main tracks list if this was the root directory
                 if (navigationStack.isNotEmpty() && navigationStack.first() == uri) {
                     _tracks.value = enrichedTracks
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                android.util.Log.e("MusicViewModel", "Failed to load directory", e)
             }
         }
     }
