@@ -46,8 +46,14 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     private val _currentTrack = MutableStateFlow<AudioTrack?>(null)
     val currentTrack = combine(_currentTrack, allTrackMetadata) { track, metadataMap ->
         track?.let { t ->
-            val customArt = metadataMap[t.id]?.customArtUri
-            if (t.customArtUri != customArt) t.copy(customArtUri = customArt) else t
+            val meta = metadataMap[t.id]
+            val customArt = meta?.customArtUri
+            val artVer = meta?.artVersion ?: 0L
+            
+            // Sync BOTH artUri and artVersion to ensure UI and cache busting are up to date
+            if (t.customArtUri != customArt || t.artVersion != artVer) {
+                t.copy(customArtUri = customArt, artVersion = artVer)
+            } else t
         }
     }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Lazily, null)
     
@@ -67,7 +73,8 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                     artist = meta.cachedArtist ?: track.artist,
                     album = meta.cachedAlbum ?: track.album,
                     duration = meta.cachedDuration ?: track.duration,
-                    customArtUri = meta.customArtUri
+                    customArtUri = meta.customArtUri,
+                    artVersion = meta.artVersion
                 )
             } else track
         }
@@ -556,20 +563,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun toggleDualPlayPause() {
-        if (!_isDualPlayback.value) {
-            togglePlayPause()
-            return
-        }
-        val targetPlaying = !(_isPlaying.value)
-        if (targetPlaying) {
-            instrumentalPlayer?.play()
-            vocalPlayer?.play()
-            startProgressPolling()
-        } else {
-            instrumentalPlayer?.pause()
-            vocalPlayer?.pause()
-        }
-        _isPlaying.value = targetPlaying
+        togglePlayPause()
     }
 
     fun seekDualPlayback(position: Long) {
@@ -1151,7 +1145,9 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                     }
                 } else {
                     val controller = mediaController
-                    if (controller != null && controller.isPlaying) {
+                    // If we just resumed, controller.isPlaying might be false for a brief moment
+                    // We also check _isPlaying.value which we set manually to true on resume
+                    if (controller != null && (controller.isPlaying || _isPlaying.value)) {
                         val currentPos = controller.currentPosition
                         _currentPosition.value = currentPos
                         
@@ -1552,6 +1548,21 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun togglePlayPause() {
+        if (_isDualPlayback.value) {
+            // Unify playback control if Vocal Remover is active
+            val targetPlaying = !(_isPlaying.value)
+            if (targetPlaying) {
+                instrumentalPlayer?.play()
+                vocalPlayer?.play()
+                startProgressPolling()
+            } else {
+                instrumentalPlayer?.pause()
+                vocalPlayer?.pause()
+            }
+            _isPlaying.value = targetPlaying
+            return
+        }
+
         mediaController?.let {
             if (it.isPlaying) {
                 it.pause()
@@ -2281,28 +2292,28 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun removeCustomArt(trackId: Long) {
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                // 1. Update Database
-                val meta = playlistDao.getTrackMetadataSync(trackId) ?: TrackMetadata(trackId)
-                playlistDao.updateTrackMetadata(meta.copy(customArtUri = null, artVersion = System.currentTimeMillis()))
-                
-                // 2. Physical removal from file
-                val track = _tracks.value.find { it.id == trackId }
-                    ?: _currentQueue.value.find { it.id == trackId }
-                    ?: repository.getTrackFromCache(trackId)
-                
-                if (track != null) {
-                    val success = TagWriter(context).removeAlbumArtFromFile(track.contentUri)
-                    if (success) {
-                        refreshTrackAfterTagUpdate(trackId, track.contentUri)
-                    }
-                }
-            }
+        viewModelScope.launch(Dispatchers.IO) {
+            // 1. Update Database
+            val meta = playlistDao.getTrackMetadataSync(trackId) ?: TrackMetadata(trackId)
+            val newVer = System.currentTimeMillis()
+            playlistDao.updateTrackMetadata(meta.copy(customArtUri = null, artVersion = newVer))
             
-            if (_currentTrack.value?.id == trackId) {
-                _currentTrack.value = _currentTrack.value?.copy(customArtUri = null, artVersion = System.currentTimeMillis())
+            // 2. Physical removal from file
+            val track = _tracks.value.find { it.id == trackId }
+                ?: _currentQueue.value.find { it.id == trackId }
+                ?: repository.getTrackFromCache(trackId)
+            
+            if (track != null) {
+                TagWriter(context).removeAlbumArtFromFile(track.contentUri)
+                // We don't call refreshTrackAfterTagUpdate here because we already updated the DB above
+                // But we should notify the system scanner
+                try {
+                    android.media.MediaScannerConnection.scanFile(context, arrayOf(track.contentUri.path), null) { _, _ -> }
+                } catch (e: Exception) {}
             }
+
+            // Note: The UI will update automatically because 'currentTrack' 
+            // is observing 'allTrackMetadata' which is a Flow from the DAO.
         }
     }
 
