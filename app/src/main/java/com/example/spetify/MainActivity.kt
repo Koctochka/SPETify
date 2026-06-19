@@ -1189,7 +1189,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
     val processingStatus by viewModel.processingStatus.collectAsState()
     val targetTrack by viewModel.vocalRemoverTargetTrack.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
-    val currentPosition by viewModel.currentPosition.collectAsState()
+    val dualPosition by viewModel.dualPosition.collectAsState()
     val isDualPlayback by viewModel.isDualPlayback.collectAsState()
     val instrumentalVolume by viewModel.instrumentalVolume.collectAsState()
     val vocalsVolume by viewModel.vocalsVolume.collectAsState()
@@ -1238,9 +1238,10 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp),
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // File Selection Area
                 OutlinedCard(
@@ -1249,7 +1250,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
                 ) {
                     Box(
-                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
@@ -1259,7 +1260,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                             Icon(
                                 imageVector = Icons.Default.AudioFile,
                                 contentDescription = null,
-                                modifier = Modifier.size(48.dp),
+                                modifier = Modifier.size(40.dp),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                             Text(
@@ -1267,13 +1268,6 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                                 style = MaterialTheme.typography.titleMedium,
                                 textAlign = TextAlign.Center
                             )
-                            if (targetTrack != null) {
-                                Text(
-                                    text = if (currentLang == "ru") "Файл выбран" else "File selected",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
                         }
                     }
                 }
@@ -1310,7 +1304,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Slider(
-                            value = currentPosition.toFloat(),
+                            value = dualPosition.toFloat(),
                             onValueChange = { viewModel.seekDualPlayback(it.toLong()) },
                             valueRange = 0f..(targetTrack?.duration?.toFloat() ?: 1f).coerceAtLeast(1f),
                             colors = SliderDefaults.colors(
@@ -1323,7 +1317,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(formatDuration(currentPosition), style = MaterialTheme.typography.bodySmall)
+                            Text(formatDuration(dualPosition), style = MaterialTheme.typography.bodySmall)
                             Text(formatDuration(targetTrack?.duration ?: 0L), style = MaterialTheme.typography.bodySmall)
                         }
 
@@ -1341,10 +1335,10 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                     }
                 }
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
 
                 // Volume Controls
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -1388,13 +1382,13 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                     }
                 }
 
-                Spacer(modifier = Modifier.weight(1f))
-
                 // Clear button
                 if (targetTrack != null) {
-                    TextButton(
+                    OutlinedButton(
                         onClick = { viewModel.clearVocalRemoverTarget() },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
                     ) {
                         Icon(Icons.Default.Clear, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
@@ -1418,7 +1412,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                     ) {
                         Icon(Icons.Default.History, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (currentLang == "ru") "Загрузить сохран." else "Load Saved")
+                        Text(if (currentLang == "ru") "Загрузить" else "Load")
                     }
 
                     Button(

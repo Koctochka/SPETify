@@ -63,6 +63,9 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     private val _currentPosition = MutableStateFlow(0L)
     val currentPosition = _currentPosition.asStateFlow()
 
+    private val _dualPosition = MutableStateFlow(0L)
+    val dualPosition = _dualPosition.asStateFlow()
+
     private val _tracks = MutableStateFlow<List<AudioTrack>>(emptyList())
     val tracks = combine(_tracks, allTrackMetadata) { tracks, metadataMap ->
         tracks.map { track ->
@@ -583,7 +586,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         }
         instrumentalPlayer?.seekTo(position)
         vocalPlayer?.seekTo(position)
-        _currentPosition.value = position
+        _dualPosition.value = position
     }
 
     private fun setupDualPlayback(track: AudioTrack) {
@@ -1150,7 +1153,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                 if (_isDualPlayback.value) {
                     instrumentalPlayer?.let {
                         if (it.isPlaying) {
-                            _currentPosition.value = it.currentPosition
+                            _dualPosition.value = it.currentPosition
                         }
                     }
                 } else {
