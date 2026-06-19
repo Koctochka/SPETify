@@ -576,7 +576,29 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun toggleDualPlayPause() {
-        togglePlayPause()
+        if (!_isDualPlayback.value) return
+        
+        val targetPlaying = !(_isPlaying.value)
+        if (targetPlaying) {
+            // If we're starting dual playback, pause normal player
+            mediaController?.pause()
+            
+            instrumentalPlayer?.play()
+            vocalPlayer?.play()
+            startProgressPolling()
+        } else {
+            instrumentalPlayer?.pause()
+            vocalPlayer?.pause()
+        }
+        _isPlaying.value = targetPlaying
+    }
+
+    fun pauseDualPlayback() {
+        if (_isDualPlayback.value && _isPlaying.value) {
+            instrumentalPlayer?.pause()
+            vocalPlayer?.pause()
+            _isPlaying.value = false
+        }
     }
 
     fun seekDualPlayback(position: Long) {
@@ -1561,29 +1583,13 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun togglePlayPause() {
-        if (_isDualPlayback.value) {
-            // If Vocal Remover is active, the main Play button acts as a global master switch
-            // or just toggles the dual players. User requested dual control only in its screen,
-            // but the Home button should at least be consistent.
-            val targetPlaying = !(_isPlaying.value)
-            if (targetPlaying) {
-                instrumentalPlayer?.play()
-                vocalPlayer?.play()
-                startProgressPolling()
-            } else {
-                instrumentalPlayer?.pause()
-                vocalPlayer?.pause()
-            }
-            _isPlaying.value = targetPlaying
-            return
-        }
-
+        // Main player control - ALWAYS for normal songs
         mediaController?.let {
             if (it.isPlaying) {
                 it.pause()
                 _isPlaying.value = false
             } else {
-                // Ensure dual playback is OFF when starting normal player
+                // If we're starting normal music, stop dual playback first
                 stopDualPlayback()
                 it.play()
                 _isPlaying.value = true

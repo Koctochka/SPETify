@@ -1184,6 +1184,11 @@ fun QueueViewContent(
 
 @Composable
 fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
+    BackHandler {
+        viewModel.pauseDualPlayback()
+        onBack()
+    }
+
     val currentLang by viewModel.appLanguage.collectAsState()
     val isProcessingVocal by viewModel.isProcessingVocal.collectAsState()
     val processingStatus by viewModel.processingStatus.collectAsState()
@@ -1222,6 +1227,7 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = {
+                    viewModel.pauseDualPlayback()
                     onBack()
                 }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
@@ -1381,6 +1387,8 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // Clear button
                 if (targetTrack != null) {
