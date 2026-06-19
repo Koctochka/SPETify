@@ -3760,9 +3760,9 @@ fun LyricsSearchResultsDialog(
                     LazyColumn(modifier = Modifier.weight(1f)) {
                         items(results) { result ->
                             ListItem(
-                                headlineContent = { Text(result.trackName, color = MaterialTheme.colorScheme.onBackground) },
+                                headlineContent = { Text(result.trackName ?: "Unknown", color = MaterialTheme.colorScheme.onBackground) },
                                 supportingContent = { 
-                                    Text("${result.artistName} • ${result.albumName ?: ""}", color = MaterialTheme.colorScheme.onSurfaceVariant) 
+                                    Text("${result.artistName ?: "Unknown"} • ${result.albumName ?: ""}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 },
                                 leadingContent = { 
                                     Icon(
