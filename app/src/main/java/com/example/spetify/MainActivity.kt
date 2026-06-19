@@ -970,24 +970,6 @@ fun QueueManagerDialog(
                 }
             }
         }
-
-        // Delete button in bottom-left corner
-        if (!isLoading && (syncedLyrics.isNotEmpty() || plainLyrics != null) && currentTrack != null) {
-            IconButton(
-                onClick = { viewModel.deleteLyrics(currentTrack!!.id) },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(4.dp)
-                    .size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Delete Lyrics",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
     }
 }
 
@@ -1195,24 +1177,6 @@ fun QueueViewContent(
                         }
                     }
                 }
-            }
-        }
-
-        // Delete button in bottom-left corner
-        if (!isLoading && (syncedLyrics.isNotEmpty() || plainLyrics != null) && currentTrack != null) {
-            IconButton(
-                onClick = { viewModel.deleteLyrics(currentTrack!!.id) },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(4.dp)
-                    .size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Delete Lyrics",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(18.dp)
-                )
             }
         }
     }
@@ -1476,24 +1440,6 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                 }
             }
         }
-
-        // Delete button in bottom-left corner
-        if (!isLoading && (syncedLyrics.isNotEmpty() || plainLyrics != null) && currentTrack != null) {
-            IconButton(
-                onClick = { viewModel.deleteLyrics(currentTrack!!.id) },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(4.dp)
-                    .size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Delete Lyrics",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
     }
 }
 
@@ -1740,24 +1686,6 @@ fun OptionSelectionDialog(
                         Text(text = option, color = MaterialTheme.colorScheme.onBackground)
                     }
                 }
-            }
-        }
-
-        // Delete button in bottom-left corner
-        if (!isLoading && (syncedLyrics.isNotEmpty() || plainLyrics != null) && currentTrack != null) {
-            IconButton(
-                onClick = { viewModel.deleteLyrics(currentTrack!!.id) },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(4.dp)
-                    .size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Delete Lyrics",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(18.dp)
-                )
             }
         }
     }
@@ -2413,24 +2341,6 @@ fun NowPlayingScreen(
                 }
             }
         }
-
-        // Delete button in bottom-left corner
-        if (!isLoading && (syncedLyrics.isNotEmpty() || plainLyrics != null) && currentTrack != null) {
-            IconButton(
-                onClick = { viewModel.deleteLyrics(currentTrack!!.id) },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(4.dp)
-                    .size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Delete Lyrics",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
     }
 }
 
@@ -2507,24 +2417,6 @@ fun SortDialog(
                         Text(text = Localization.getString(labelKey, lang), color = MaterialTheme.colorScheme.onBackground)
                     }
                 }
-            }
-        }
-
-        // Delete button in bottom-left corner
-        if (!isLoading && (syncedLyrics.isNotEmpty() || plainLyrics != null) && currentTrack != null) {
-            IconButton(
-                onClick = { viewModel.deleteLyrics(currentTrack!!.id) },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(4.dp)
-                    .size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Delete Lyrics",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(18.dp)
-                )
             }
         }
     }
@@ -2619,24 +2511,6 @@ fun TrackList(
                 }
             }
         }
-
-        // Delete button in bottom-left corner
-        if (!isLoading && (syncedLyrics.isNotEmpty() || plainLyrics != null) && currentTrack != null) {
-            IconButton(
-                onClick = { viewModel.deleteLyrics(currentTrack!!.id) },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(4.dp)
-                    .size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Delete Lyrics",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
     }
 }
 
@@ -2677,24 +2551,6 @@ fun PlaylistList(
                 IconButton(onClick = { onDeleteClick(playlist) }) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            }
-        }
-
-        // Delete button in bottom-left corner
-        if (!isLoading && (syncedLyrics.isNotEmpty() || plainLyrics != null) && currentTrack != null) {
-            IconButton(
-                onClick = { viewModel.deleteLyrics(currentTrack!!.id) },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(4.dp)
-                    .size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Delete Lyrics",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(18.dp)
-                )
             }
         }
     }
@@ -3388,24 +3244,6 @@ fun TagEditorDialog(
                 }
             }
         }
-
-        // Delete button in bottom-left corner
-        if (!isLoading && (syncedLyrics.isNotEmpty() || plainLyrics != null) && currentTrack != null) {
-            IconButton(
-                onClick = { viewModel.deleteLyrics(currentTrack!!.id) },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(4.dp)
-                    .size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Delete Lyrics",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
     }
 }
 
@@ -3805,24 +3643,6 @@ fun SleepTimerDialog(
                 TextButton(onClick = onDismiss, modifier = Modifier.padding(top = 8.dp)) {
                     Text(if (lang == "ru") "ЗАКРЫТЬ" else "CLOSE", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            }
-        }
-
-        // Delete button in bottom-left corner
-        if (!isLoading && (syncedLyrics.isNotEmpty() || plainLyrics != null) && currentTrack != null) {
-            IconButton(
-                onClick = { viewModel.deleteLyrics(currentTrack!!.id) },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(4.dp)
-                    .size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Delete Lyrics",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(18.dp)
-                )
             }
         }
     }
