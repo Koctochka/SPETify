@@ -19,71 +19,70 @@ class LyricsService {
         coerceInputValues = true
     }
 
-    suspend fun fetchLyrics(track: AudioTrack): LrcLibResponse? = withContext(Dispatchers.IO) {
-        // Sanitize search terms
+    suspend fun fetchLyricsList(track: AudioTrack): List<LrcLibResponse> = withContext(Dispatchers.IO) {
         var artist = track.artist.takeIf { !it.contains("unknown", ignoreCase = true) } ?: ""
-        var title = track.title.substringBefore(" (").substringBefore(" [") // Remove extra tags
-        val album = track.album.takeIf { !it.contains("unknown", ignoreCase = true) && it != "Single" } ?: ""
-
+        var title = track.title.substringBefore(" (").substringBefore(" [")
+        
         artist = java.text.Normalizer.normalize(artist, java.text.Normalizer.Form.NFC)
         title = java.text.Normalizer.normalize(title, java.text.Normalizer.Form.NFC)
 
-        if ((artist.isBlank() || artist == "Unknown Artist") && title.contains(" - ")) {
-            val parts = title.split(" - ", limit = 2)
-            title = parts[0].trim()
-            artist = parts[1].trim()
-        }
-        
-        // Strategy: Fast Exact -> Lenient Search -> Aggressive Search
-        
-        // 1. Exact "get" (Try with short timeout first)
-        val getUrl = "https://lrclib.net/api/get".toHttpUrlOrNull()?.newBuilder()
-            ?.addQueryParameter("track_name", title)
-            ?.addQueryParameter("artist_name", artist)
-            ?.addQueryParameter("duration", (track.duration / 1000).toString())
-            ?.build()
-
-        if (getUrl != null) {
-            val response = performRequest(Request.Builder()
-                .url(getUrl)
-                .header("User-Agent", "SPETify/1.1.0")
-                .build())
-            if (response != null) return@withContext response
-        }
-
-        // 2. Lenient Search (Title + Artist)
         val searchUrl = "https://lrclib.net/api/search".toHttpUrlOrNull()?.newBuilder()
             ?.addQueryParameter("track_name", title)
             ?.addQueryParameter("artist_name", artist)
             ?.build()
         
+        val results = mutableListOf<LrcLibResponse>()
+        
         if (searchUrl != null) {
             val body = performRequestRaw(Request.Builder().url(searchUrl).build())
             if (body != null) {
                 try {
-                    val results = json.decodeFromString<List<LrcLibResponse>>(body)
-                    val match = results.firstOrNull { !it.syncedLyrics.isNullOrBlank() || !it.plainLyrics.isNullOrBlank() }
-                    if (match != null) return@withContext match
+                    results.addAll(json.decodeFromString<List<LrcLibResponse>>(body))
                 } catch (e: Exception) { /* ignore */ }
             }
         }
 
-        // 3. Last Resort: Global Search Query
-        val queryUrl = "https://lrclib.net/api/search".toHttpUrlOrNull()?.newBuilder()
-            ?.addQueryParameter("q", if (artist.isNotBlank()) "$artist $title" else title)
-            ?.build()
+        // If very few results, try global search
+        if (results.size < 3) {
+            val queryUrl = "https://lrclib.net/api/search".toHttpUrlOrNull()?.newBuilder()
+                ?.addQueryParameter("q", if (artist.isNotBlank()) "$artist $title" else title)
+                ?.build()
 
-        if (queryUrl != null) {
-            val body = performRequestRaw(Request.Builder().url(queryUrl).build())
-            if (body != null) {
-                try {
-                    val results = json.decodeFromString<List<LrcLibResponse>>(body)
-                    return@withContext results.firstOrNull { !it.syncedLyrics.isNullOrBlank() || !it.plainLyrics.isNullOrBlank() }
-                } catch (e: Exception) { /* ignore */ }
+            if (queryUrl != null) {
+                val body = performRequestRaw(Request.Builder().url(queryUrl).build())
+                if (body != null) {
+                    try {
+                        val globalResults = json.decodeFromString<List<LrcLibResponse>>(body)
+                        results.addAll(globalResults.filter { gr -> results.none { it.id == gr.id } })
+                    } catch (e: Exception) { /* ignore */ }
+                }
             }
         }
 
-        null
+        results.filter { !it.syncedLyrics.isNullOrBlank() || !it.plainLyrics.isNullOrBlank() }
+    }
+
+    suspend fun searchLyricsManualList(title: String, artist: String): List<LrcLibResponse> = withContext(Dispatchers.IO) {
+        val url = "https://lrclib.net/api/search".toHttpUrlOrNull()?.newBuilder()
+            ?.addQueryParameter("track_name", title)
+            ?.addQueryParameter("artist_name", artist)
+            ?.build() ?: return@withContext emptyList()
+
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "SPETify/1.1.0")
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext emptyList()
+                val body = response.body?.string() ?: return@withContext emptyList()
+                json.decodeFromString<List<LrcLibResponse>>(body)
+                    .filter { !it.syncedLyrics.isNullOrBlank() || !it.plainLyrics.isNullOrBlank() }
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     private fun performRequestRaw(request: Request): String? {
@@ -93,39 +92,6 @@ class LyricsService {
             }
         } catch (e: Exception) {
             android.util.Log.e("LyricsService", "Network request failed: ${e.message}")
-            null
-        }
-    }
-
-    private fun performRequest(request: Request): LrcLibResponse? {
-        val body = performRequestRaw(request) ?: return null
-        return try {
-            json.decodeFromString<LrcLibResponse>(body)
-        } catch (e: Exception) {
-            android.util.Log.e("LyricsService", "JSON parse error: ${e.message}")
-            null
-        }
-    }
-
-    suspend fun searchLyricsManual(title: String, artist: String): LrcLibResponse? = withContext(Dispatchers.IO) {
-        val url = "https://lrclib.net/api/search".toHttpUrlOrNull()?.newBuilder()
-            ?.addQueryParameter("track_name", title)
-            ?.addQueryParameter("artist_name", artist)
-            ?.build() ?: return@withContext null
-
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "SPETify/1.0.0")
-            .build()
-
-        try {
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext null
-                val body = response.body?.string() ?: return@withContext null
-                val results = json.decodeFromString<List<LrcLibResponse>>(body)
-                return@withContext results.firstOrNull { !it.syncedLyrics.isNullOrBlank() || !it.plainLyrics.isNullOrBlank() }
-            }
-        } catch (e: Exception) {
             null
         }
     }

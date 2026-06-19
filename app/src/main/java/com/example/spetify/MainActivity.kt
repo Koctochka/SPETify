@@ -862,6 +862,17 @@ fun MusicPlayerScreen(viewModel: MusicViewModel) {
             containerColor = SpotifyDarkGrey
         )
     }
+
+    val showLyricsResults by viewModel.showLyricsSearchResults.collectAsState()
+    val lyricsResults by viewModel.lyricsSearchResults.collectAsState()
+    if (showLyricsResults) {
+        LyricsSearchResultsDialog(
+            results = lyricsResults,
+            onDismiss = { viewModel.closeLyricsSearchResults() },
+            onSelect = { viewModel.applySelectedLyrics(it) },
+            lang = lang
+        )
+    }
 }
 
 @Composable
@@ -3717,6 +3728,84 @@ fun TabButton(
                 maxLines = 1,
                 fontSize = 11.sp
             )
+        }
+    }
+}
+
+@Composable
+fun LyricsSearchResultsDialog(
+    results: List<LrcLibResponse>,
+    onDismiss: () -> Unit,
+    onSelect: (LrcLibResponse) -> Unit,
+    lang: String
+) {
+    var previewResult by remember { mutableStateOf<LrcLibResponse?>(null) }
+
+    Dialog(onDismissRequest = if (previewResult != null) { { previewResult = null } } else onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f).padding(16.dp),
+            colors = CardDefaults.cardColors(containerColor = if (MaterialTheme.colorScheme.background == Color.White) Color.White else SpotifyDarkGrey),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = (if (previewResult != null) previewResult!!.trackName else (if (lang == "ru") "Результаты поиска" else "Search Results")) ?: "",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (previewResult == null) {
+                    LazyColumn(modifier = Modifier.weight(1f)) {
+                        items(results) { result ->
+                            ListItem(
+                                headlineContent = { Text(result.trackName, color = MaterialTheme.colorScheme.onBackground) },
+                                supportingContent = { 
+                                    Text("${result.artistName} • ${result.albumName ?: ""}", color = MaterialTheme.colorScheme.onSurfaceVariant) 
+                                },
+                                leadingContent = { 
+                                    Icon(
+                                        imageVector = if (!result.syncedLyrics.isNullOrBlank()) Icons.Default.Lyrics else Icons.Default.Description,
+                                        contentDescription = null,
+                                        tint = if (!result.syncedLyrics.isNullOrBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                modifier = Modifier.clickable { previewResult = result },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                        }
+                    }
+                } else {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (!previewResult!!.syncedLyrics.isNullOrBlank()) (if (lang == "ru") "Синхронизированный текст" else "Synced Lyrics") else (if (lang == "ru") "Обычный текст" else "Plain Lyrics"),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                            Text(
+                                text = previewResult!!.syncedLyrics ?: previewResult!!.plainLyrics ?: "",
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { onSelect(previewResult!!) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (lang == "ru") "ВЫБРАТЬ ЭТОТ ВАРИАНТ" else "SELECT THIS VERSION")
+                        }
+                    }
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = if (previewResult != null) { { previewResult = null } } else onDismiss) {
+                        Text(if (previewResult != null) (if (lang == "ru") "НАЗАД" else "BACK") else (if (lang == "ru") "ОТМЕНА" else "CANCEL"), color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
         }
     }
 }

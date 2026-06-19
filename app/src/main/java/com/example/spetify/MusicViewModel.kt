@@ -319,6 +319,12 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     private val _sleepTimerTotalSeconds = MutableStateFlow<Long?>(null)
     val sleepTimerTotalSeconds = _sleepTimerTotalSeconds.asStateFlow()
 
+    private val _lyricsSearchResults = MutableStateFlow<List<LrcLibResponse>>(emptyList())
+    val lyricsSearchResults = _lyricsSearchResults.asStateFlow()
+
+    private val _showLyricsSearchResults = MutableStateFlow(false)
+    val showLyricsSearchResults = _showLyricsSearchResults.asStateFlow()
+
     private val _isProcessingVocal = MutableStateFlow(false)
     val isProcessingVocal = _isProcessingVocal.asStateFlow()
 
@@ -1955,11 +1961,30 @@ class MusicViewModel(private val context: Context) : ViewModel() {
 
     fun startAutoSearchFromMenu(type: LyricsMenuType) {
         _showLyricsSearchMenu.value = null
-        _currentTrack.value?.let { 
-            fetchLyrics(it, forceRefresh = true)
-            if (type == LyricsMenuType.KARAOKE) _showLyrics.value = true
-            else _showLyricsFull.value = true
+        val track = _currentTrack.value ?: return
+        _isLyricsLoading.value = true
+        viewModelScope.launch {
+            try {
+                val results = lyricsService.fetchLyricsList(track)
+                if (results.isEmpty()) {
+                    android.widget.Toast.makeText(context, "No lyrics found", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    _lyricsSearchResults.value = results
+                    _showLyricsSearchResults.value = true
+                    // Ensure the correct view mode is ready
+                    if (type == LyricsMenuType.KARAOKE) _showLyrics.value = true
+                    else _showLyricsFull.value = true
+                }
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(context, "Search failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+            } finally {
+                _isLyricsLoading.value = false
+            }
         }
+    }
+
+    fun closeLyricsSearchResults() {
+        _showLyricsSearchResults.value = false
     }
 
     fun startManualSearchFromMenu(type: LyricsMenuType) {
@@ -2054,33 +2079,19 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun searchLyricsManual(title: String, artist: String) {
+        _showLyricsSearchDialog.value = false
+        _isLyricsLoading.value = true
         viewModelScope.launch {
-            _isLyricsLoading.value = true
-            _showLyricsSearchDialog.value = false
             try {
-                val response = lyricsService.searchLyricsManual(title, artist)
-                val track = _currentTrack.value
-                if (response != null && track != null) {
-                    // CRITICAL FIX: Save the manually found lyrics to the database immediately
-                    withContext(Dispatchers.IO) {
-                        playlistDao.updateCachedLyrics(track.id, response.plainLyrics, response.syncedLyrics)
-                    }
-
-                    if (!response.syncedLyrics.isNullOrBlank()) {
-                        _syncedLyrics.value = lyricsService.parseSyncedLyrics(response.syncedLyrics)
-                        _plainLyrics.value = response.plainLyrics ?: _syncedLyrics.value.joinToString("\n") { it.content }
-                    } else {
-                        _plainLyrics.value = response.plainLyrics
-                        _syncedLyrics.value = emptyList()
-                    }
-                } else {
-                    _plainLyrics.value = "No lyrics found for \"$title\""
-                    _syncedLyrics.value = emptyList()
-                }
+                val results = lyricsService.searchLyricsManualList(title, artist)
+                _lyricsSearchResults.value = results
+                _showLyricsSearchResults.value = true
             } catch (e: Exception) {
-                _plainLyrics.value = "Error: ${e.message}"
+                android.util.Log.e("MusicViewModel", "Manual lyrics search failed", e)
+                android.widget.Toast.makeText(context, "Search failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+            } finally {
+                _isLyricsLoading.value = false
             }
-            _isLyricsLoading.value = false
         }
     }
 
@@ -2089,50 +2100,27 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     private fun fetchLyrics(track: AudioTrack, forceRefresh: Boolean = false) {
-        lyricsJob?.cancel() // Cancel previous request immediately
+        lyricsJob?.cancel() 
         
         lyricsJob = viewModelScope.launch {
-            // 1. Check Cache (Fast!) - Skip if we already have lyrics and NOT forcing refresh
             if (!forceRefresh) {
                 val cachedMeta = withContext(Dispatchers.IO) { playlistDao.getTrackMetadataSync(track.id) }
                 if (cachedMeta != null && (!cachedMeta.cachedLyrics.isNullOrBlank() || !cachedMeta.cachedSyncedLyrics.isNullOrBlank())) {
-                    if (!cachedMeta.cachedSyncedLyrics.isNullOrBlank()) {
-                        val parsed = lyricsService.parseSyncedLyrics(cachedMeta.cachedSyncedLyrics)
-                        _syncedLyrics.value = parsed
-                        _plainLyrics.value = cachedMeta.cachedLyrics ?: parsed.joinToString("\n") { it.content }
-                    } else {
-                        _plainLyrics.value = cachedMeta.cachedLyrics
-                        _syncedLyrics.value = emptyList()
-                    }
-                    _isLyricsLoading.value = false // CRITICAL: Stop loading when cache hit
+                    applyLyricsToState(cachedMeta.cachedLyrics, cachedMeta.cachedSyncedLyrics)
+                    _isLyricsLoading.value = false
                     return@launch
                 }
             }
             
-            // 2. Network Fetch (Only if not found in DB or forceRefresh is true)
             _isLyricsLoading.value = true
             try {
-                val response = lyricsService.fetchLyrics(track)
-                
+                val results = lyricsService.fetchLyricsList(track)
                 if (_currentTrack.value?.id != track.id) return@launch
 
-                if (response != null) {
-                    // Save to Room for future use
-                    withContext(Dispatchers.IO) {
-                        playlistDao.updateCachedLyrics(track.id, response.plainLyrics, response.syncedLyrics)
-                    }
-                    
-                    if (!response.syncedLyrics.isNullOrBlank()) {
-                        val parsed = lyricsService.parseSyncedLyrics(response.syncedLyrics)
-                        _syncedLyrics.value = parsed
-                        _plainLyrics.value = response.plainLyrics ?: parsed.joinToString("\n") { it.content }
-                    } else if (!response.plainLyrics.isNullOrBlank()) {
-                        _plainLyrics.value = response.plainLyrics
-                        _syncedLyrics.value = emptyList()
-                    } else {
-                        _plainLyrics.value = "Lyrics not found in database"
-                        _syncedLyrics.value = emptyList()
-                    }
+                if (results.isNotEmpty()) {
+                    // Auto-fetch always takes the first one (best match)
+                    val best = results.first()
+                    saveAndApplyLyrics(track.id, best)
                 } else {
                     _plainLyrics.value = "No lyrics found for this track"
                     _syncedLyrics.value = emptyList()
@@ -2146,6 +2134,34 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                     _isLyricsLoading.value = false
                 }
             }
+        }
+    }
+
+    private fun applyLyricsToState(plain: String?, synced: String?) {
+        if (!synced.isNullOrBlank()) {
+            val parsed = lyricsService.parseSyncedLyrics(synced)
+            _syncedLyrics.value = parsed
+            _plainLyrics.value = plain ?: parsed.joinToString("\n") { it.content }
+        } else {
+            _plainLyrics.value = plain
+            _syncedLyrics.value = emptyList()
+        }
+    }
+
+    private suspend fun saveAndApplyLyrics(trackId: Long, response: LrcLibResponse) {
+        withContext(Dispatchers.IO) {
+            playlistDao.updateCachedLyrics(trackId, response.plainLyrics, response.syncedLyrics)
+        }
+        if (_currentTrack.value?.id == trackId) {
+            applyLyricsToState(response.plainLyrics, response.syncedLyrics)
+        }
+    }
+
+    fun applySelectedLyrics(response: LrcLibResponse) {
+        val trackId = _currentTrack.value?.id ?: return
+        viewModelScope.launch {
+            saveAndApplyLyrics(trackId, response)
+            _showLyricsSearchResults.value = false
         }
     }
 
