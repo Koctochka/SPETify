@@ -505,6 +505,16 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         _showVocalRemoverScreen.value = show
     }
 
+    fun clearVocalRemoverTarget() {
+        stopDualPlayback()
+        _vocalRemoverTargetTrack.value = null
+        _processingStatus.value = ""
+        sharedPrefs.edit().apply {
+            remove(KEY_VOCAL_REMOVER_URI)
+            remove(KEY_VOCAL_REMOVER_NAME)
+        }.apply()
+    }
+
     fun loadPreviousResult() {
         val track = _vocalRemoverTargetTrack.value ?: return
         if (hasSavedResult.value) {
@@ -1549,7 +1559,9 @@ class MusicViewModel(private val context: Context) : ViewModel() {
 
     fun togglePlayPause() {
         if (_isDualPlayback.value) {
-            // Unify playback control if Vocal Remover is active
+            // If Vocal Remover is active, the main Play button acts as a global master switch
+            // or just toggles the dual players. User requested dual control only in its screen,
+            // but the Home button should at least be consistent.
             val targetPlaying = !(_isPlaying.value)
             if (targetPlaying) {
                 instrumentalPlayer?.play()
@@ -1568,6 +1580,8 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                 it.pause()
                 _isPlaying.value = false
             } else {
+                // Ensure dual playback is OFF when starting normal player
+                stopDualPlayback()
                 it.play()
                 _isPlaying.value = true
                 startProgressPolling()

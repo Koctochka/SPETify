@@ -1390,6 +1390,18 @@ fun VocalRemoverScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
 
                 Spacer(modifier = Modifier.weight(1f))
 
+                // Clear button
+                if (targetTrack != null) {
+                    TextButton(
+                        onClick = { viewModel.clearVocalRemoverTarget() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Clear, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (currentLang == "ru") "Очистить" else "Clear")
+                    }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
