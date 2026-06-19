@@ -2033,6 +2033,18 @@ class MusicViewModel(private val context: Context) : ViewModel() {
         }
     }
 
+    fun deleteLyrics(trackId: Long) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                playlistDao.updateCachedLyrics(trackId, null, null)
+            }
+            if (_currentTrack.value?.id == trackId) {
+                _plainLyrics.value = null
+                _syncedLyrics.value = emptyList()
+            }
+        }
+    }
+
     fun openLyricsSearch() {
         _showLyricsSearchDialog.value = true
     }
