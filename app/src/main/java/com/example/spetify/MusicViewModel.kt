@@ -1038,7 +1038,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
             val pos = sharedPrefs.getLong(KEY_LAST_POSITION, 0L)
 
             if (uriStr != null) {
-                _currentTrack.value = AudioTrack(
+                val track = AudioTrack(
                     id = lastTrackId,
                     title = title,
                     artist = artist,
@@ -1047,7 +1047,11 @@ class MusicViewModel(private val context: Context) : ViewModel() {
                     customArtUri = artStr,
                     dateAdded = pos // Using pos as dummy date if needed, or just 0
                 )
+                _currentTrack.value = track
                 _currentPosition.value = pos
+                
+                // NEW: Trigger lyrics load for restored track
+                fetchLyrics(track)
             }
         }
     }
@@ -1388,12 +1392,8 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     }
 
     fun playTrack(track: AudioTrack, playlist: List<AudioTrack>? = null) {
-        // If it's an AI track, pause dual playback if active
-        if (_isDualPlayback.value) {
-            instrumentalPlayer?.pause()
-            vocalPlayer?.pause()
-            _isPlaying.value = false
-        }
+        // Stop dual playback if active to ensure single-track player logic takes over
+        stopDualPlayback()
 
         // If clicking the track that is already loaded, just resume it
         if (_currentTrack.value?.id == track.id) {
@@ -1506,6 +1506,7 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     fun playAll(tracks: List<AudioTrack>, shuffle: Boolean = false, sourceName: String? = null, initialTrackId: Long? = null) {
         if (tracks.isEmpty()) return
         
+        stopDualPlayback()
         val listToPlay = if (shuffle) tracks.shuffled() else tracks
         
         // Auto-save to Saved Queues if a source name is provided
@@ -2282,12 +2283,25 @@ class MusicViewModel(private val context: Context) : ViewModel() {
     fun removeCustomArt(trackId: Long) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
+                // 1. Update Database
                 val meta = playlistDao.getTrackMetadataSync(trackId) ?: TrackMetadata(trackId)
-                playlistDao.updateTrackMetadata(meta.copy(customArtUri = null))
+                playlistDao.updateTrackMetadata(meta.copy(customArtUri = null, artVersion = System.currentTimeMillis()))
+                
+                // 2. Physical removal from file
+                val track = _tracks.value.find { it.id == trackId }
+                    ?: _currentQueue.value.find { it.id == trackId }
+                    ?: repository.getTrackFromCache(trackId)
+                
+                if (track != null) {
+                    val success = TagWriter(context).removeAlbumArtFromFile(track.contentUri)
+                    if (success) {
+                        refreshTrackAfterTagUpdate(trackId, track.contentUri)
+                    }
+                }
             }
             
             if (_currentTrack.value?.id == trackId) {
-                _currentTrack.value = _currentTrack.value?.copy(customArtUri = null)
+                _currentTrack.value = _currentTrack.value?.copy(customArtUri = null, artVersion = System.currentTimeMillis())
             }
         }
     }

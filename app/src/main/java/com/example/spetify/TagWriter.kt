@@ -148,6 +148,47 @@ class TagWriter(private val context: Context) {
         }
     }
 
+    /**
+     * Physically removes embedded artwork from the audio file.
+     * Returns true if successful.
+     */
+    fun removeAlbumArtFromFile(audioUri: Uri): Boolean {
+        var tempAudioFile: File? = null
+        try {
+            val fileName = getFileName(audioUri)
+            val extension = fileName.substringAfterLast('.', "mp3")
+            tempAudioFile = File.createTempFile("tag_rem", ".$extension", context.cacheDir)
+
+            // Copy Original to Temp
+            context.contentResolver.openInputStream(audioUri)?.use { input ->
+                FileOutputStream(tempAudioFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            val f = AudioFileIO.read(tempAudioFile)
+            val tag = f.tag
+            if (tag != null) {
+                tag.deleteArtworkField()
+                f.commit()
+            }
+
+            // Write back to Original
+            context.contentResolver.openOutputStream(audioUri, "wt")?.use { output ->
+                FileInputStream(tempAudioFile).use { input ->
+                    input.copyTo(output)
+                }
+                output.flush()
+            }
+            return true
+        } catch (e: Exception) {
+            Log.e("TagWriter", "Failed to physically remove artwork", e)
+            return false
+        } finally {
+            tempAudioFile?.delete()
+        }
+    }
+
     private fun getFileName(uri: Uri): String {
         var name = "file.mp3"
         try {
